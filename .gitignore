@@ -203,3 +203,9 @@ calibration_*.npy
 # Training logs
 args.yaml
 results.csv
+# Local dataset artifacts
+*.txt
+shared/datasets/coco8/
+shared/datasets/exp10-new/
+shared/exp10-new/
+*.lwi
