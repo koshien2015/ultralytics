@@ -1,0 +1,26 @@
+version: '3.7'
+
+services:
+  yolov8:
+    image: ultralytics/ultralytics:latest
+    container_name: yolov11_container
+    ipc: host
+    volumes:
+      - ../shared:/shared
+    ports:
+      - "6006:6006"
+    environment:
+      - DISPLAY=:1
+    networks:
+      - cap_backend
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all
+networks: 
+  cap_backend:
+    external: true
