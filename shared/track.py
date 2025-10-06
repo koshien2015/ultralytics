@@ -1,6 +1,7 @@
 import cv2
 import sys
 import os
+import numpy as np
 from ultralytics import YOLO
 import tennis
 
@@ -32,6 +33,17 @@ model = YOLO("yolo8m_20250510.pt")
 # 複数指定: [0, 32, 37]
 target_classes = [0]  # 検出したいクラスIDをここに指定
 
+# 軌跡描画設定
+DRAW_TRAJECTORY = True  # 軌跡を描画するか
+MAX_TRAJECTORY_LENGTH = 10  # 軌跡の最大長さ（フレーム数）
+TRAJECTORY_FADE_FRAMES = 15  # 検出されなくなってから何フレームで消えるか
+TRAJECTORY_COLOR = (0, 255 , 0)  # 軌跡の色（緑）
+TRAJECTORY_THICKNESS = 4  # 軌跡の太さ
+
+# 各物体の軌跡を保存する辞書 {物体ID: {'points': [(x, y), ...], 'last_seen': frame_number}}
+trajectories = {}
+next_object_id = 0
+
 # 強調動画と元動画を開く
 cap_enhance = cv2.VideoCapture(enhance_video)
 cap_original = cv2.VideoCapture(original_video)
@@ -59,6 +71,9 @@ while True:
     # 強調フレームで検出実行
     results = model(frame_enhance, verbose=False)
 
+    # 現在フレームの検出物体の中心座標を取得
+    current_centers = []
+
     # 検出結果を元フレームに描画
     for result in results:
         boxes = result.boxes
@@ -71,11 +86,86 @@ while True:
             if target_classes and cls not in target_classes:
                 continue
 
+            # 中心座標を計算
+            center_x = int((x1 + x2) / 2)
+            center_y = int((y1 + y2) / 2)
+            current_centers.append((center_x, center_y, cls))
+
             # バウンディングボックスとラベルを描画
             cv2.rectangle(frame_original, (x1, y1), (x2, y2), (0, 255, 0), 2)
             label = f"{model.names[cls]} {conf:.2f}"
             cv2.putText(frame_original, label, (x1, y1-10),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    # 軌跡を更新（簡易的なマッチング）
+    if DRAW_TRAJECTORY:
+        # 既存の軌跡を更新
+        used_centers = set()
+        for obj_id in list(trajectories.keys()):
+            if not current_centers:
+                break
+
+            # 最も近い検出点を探す
+            points = trajectories[obj_id]['points']
+            last_point = points[-1] if points else None
+            if last_point is None:
+                continue
+
+            min_dist = float('inf')
+            best_match = None
+            for i, (cx, cy, cls) in enumerate(current_centers):
+                if i in used_centers:
+                    continue
+                dist = np.sqrt((last_point[0] - cx)**2 + (last_point[1] - cy)**2)
+                if dist < min_dist and dist < 100:  # 距離閾値
+                    min_dist = dist
+                    best_match = i
+
+            if best_match is not None:
+                cx, cy, cls = current_centers[best_match]
+                trajectories[obj_id]['points'].append((cx, cy))
+                trajectories[obj_id]['last_seen'] = frame_count
+                used_centers.add(best_match)
+                # 最大長を超えたら古い点を削除
+                if len(trajectories[obj_id]['points']) > MAX_TRAJECTORY_LENGTH:
+                    trajectories[obj_id]['points'].pop(0)
+
+        # 新しい検出物体を追加
+        for i, (cx, cy, cls) in enumerate(current_centers):
+            if i not in used_centers:
+                trajectories[next_object_id] = {
+                    'points': [(cx, cy)],
+                    'last_seen': frame_count
+                }
+                next_object_id += 1
+
+        # 古い軌跡を削除（TRAJECTORY_FADE_FRAMES経過したもの）
+        trajectories_to_remove = []
+        for obj_id, traj_data in trajectories.items():
+            if frame_count - traj_data['last_seen'] > TRAJECTORY_FADE_FRAMES:
+                trajectories_to_remove.append(obj_id)
+        for obj_id in trajectories_to_remove:
+            del trajectories[obj_id]
+
+        # 軌跡を描画
+        for obj_id, traj_data in trajectories.items():
+            points = traj_data['points']
+            frames_since_seen = frame_count - traj_data['last_seen']
+
+            # フェードアウト効果（検出されなくなってから徐々に薄く）
+            fade_alpha = max(0, 1 - (frames_since_seen / TRAJECTORY_FADE_FRAMES))
+
+            if len(points) > 1 and fade_alpha > 0:
+                for i in range(1, len(points)):
+                    # 古い点ほど薄く、さらにフェードアウト
+                    alpha = (i / len(points)) * fade_alpha
+                    thickness = max(1, int(TRAJECTORY_THICKNESS * alpha))
+
+                    # フェードアウト時は色も薄く
+                    color = tuple(int(c * fade_alpha) for c in TRAJECTORY_COLOR)
+
+                    cv2.line(frame_original, points[i-1], points[i],
+                            color, thickness)
 
     out.write(frame_original)
     frame_count += 1
