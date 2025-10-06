@@ -25,8 +25,10 @@ print(f"Generating enhanced video for detection...")
 tennis.run(original_video, enhance_video_path=enhance_video)
 
 print(f"\nLoading YOLO model...")
-# YOLOモデルをロード
-model = YOLO("yolo8m_20250510.pt")
+# YOLOモデルをロード（同じディレクトリ内）
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(script_dir, "yolo8m_20250510.pt")
+model = YOLO(model_path)
 
 # 検出対象クラスを指定（空リストで全クラス、数字を指定で特定クラスのみ）
 # 例: [0] = person, [32] = sports ball, [37] = tennis racket
