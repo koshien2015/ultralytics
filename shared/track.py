@@ -4,12 +4,13 @@ import os
 import numpy as np
 from ultralytics import YOLO
 import tennis
+from pitching_analysis import PitchingAnalyzer
 
 # コマンドライン引数から動画パスを取得
 if len(sys.argv) > 1:
     original_video = sys.argv[1]
 else:
-    original_video = "test2.mp4"
+    original_video = "test13_short.mp4"
 
 # ファイル名とディレクトリを取得
 base_name = os.path.splitext(os.path.basename(original_video))[0]
@@ -31,20 +32,32 @@ model_path = os.path.join(script_dir, "yolo8m_20250510.pt")
 model = YOLO(model_path)
 
 # 検出対象クラスを指定（空リストで全クラス、数字を指定で特定クラスのみ）
-# 例: [0] = person, [32] = sports ball, [37] = tennis racket
-# 複数指定: [0, 32, 37]
+# 0: petbottle_cap (ボール)
+# 1: pitcher_motion
+# 5: pitcher_release
 target_classes = [0]  # 検出したいクラスIDをここに指定
 
 # 軌跡描画設定
 DRAW_TRAJECTORY = True  # 軌跡を描画するか
-MAX_TRAJECTORY_LENGTH = 10  # 軌跡の最大長さ（フレーム数）
-TRAJECTORY_FADE_FRAMES = 15  # 検出されなくなってから何フレームで消えるか
+MAX_TRAJECTORY_LENGTH = 30  # 軌跡の最大長さ（フレーム数）
+TRAJECTORY_FADE_FRAMES = 20  # 検出されなくなってから何フレームで消えるか
 TRAJECTORY_COLOR = (0, 255 , 0)  # 軌跡の色（緑）
 TRAJECTORY_THICKNESS = 4  # 軌跡の太さ
+
+# ピッチング解析設定
+ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
+DRAW_STRIKE_ZONE = True  # ストライクゾーンを描画するか
+STRIKE_ZONE_WIDTH_PX = 50  # ストライクゾーンの幅（ピクセル）
 
 # 各物体の軌跡を保存する辞書 {物体ID: {'points': [(x, y), ...], 'last_seen': frame_number}}
 trajectories = {}
 next_object_id = 0
+
+# ピッチング解析の初期化
+analyzer = None
+if ENABLE_PITCHING_ANALYSIS:
+    print("Initializing pitching analyzer...")
+    analyzer = PitchingAnalyzer(strike_zone_width_px=STRIKE_ZONE_WIDTH_PX)
 
 # 強調動画と元動画を開く
 cap_enhance = cv2.VideoCapture(enhance_video)
@@ -60,6 +73,10 @@ output_path = os.path.join(video_dir, f"{base_name}_detected.mp4")
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
+# ピッチング解析にFPSを設定
+if analyzer:
+    analyzer.set_fps(fps)
+
 print(f"\nProcessing frames and detecting objects...")
 
 frame_count = 0
@@ -72,6 +89,21 @@ while True:
 
     # 強調フレームで検出実行
     results = model(frame_enhance, verbose=False)
+
+    # ピッチング解析
+    if analyzer:
+        # 解析実行
+        analysis_result = analyzer.update(results, frame_count)
+
+        # リリース検出時にログ出力
+        if analysis_result['is_release']:
+            print(f"🎯 Release detected at frame {frame_count}")
+
+        # 描画
+        frame_original = analyzer.draw(frame_original, frame_count,
+                                      ball_3d=analysis_result['ball_3d'],
+                                      draw_strike_zone=DRAW_STRIKE_ZONE,
+                                      draw_info=True)
 
     # 現在フレームの検出物体の中心座標を取得
     current_centers = []
