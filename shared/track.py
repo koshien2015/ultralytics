@@ -10,7 +10,7 @@ from pitching_analysis import PitchingAnalyzer
 if len(sys.argv) > 1:
     original_video = sys.argv[1]
 else:
-    original_video = "test13_short.mp4"
+    original_video = "test.mp4"
 
 # ファイル名とディレクトリを取得
 base_name = os.path.splitext(os.path.basename(original_video))[0]
@@ -48,6 +48,7 @@ TRAJECTORY_THICKNESS = 4  # 軌跡の太さ
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
 DRAW_STRIKE_ZONE = True  # ストライクゾーンを描画するか
 STRIKE_ZONE_WIDTH_PX = 50  # ストライクゾーンの幅（ピクセル）
+STRIKE_ZONE_CENTER_X = None  # ストライクゾーンの中央X座標（ピクセル）、Noneで初回捕手検出時に自動設定
 
 # 各物体の軌跡を保存する辞書 {物体ID: {'points': [(x, y), ...], 'last_seen': frame_number}}
 trajectories = {}
@@ -57,7 +58,10 @@ next_object_id = 0
 analyzer = None
 if ENABLE_PITCHING_ANALYSIS:
     print("Initializing pitching analyzer...")
-    analyzer = PitchingAnalyzer(strike_zone_width_px=STRIKE_ZONE_WIDTH_PX)
+    analyzer = PitchingAnalyzer(
+        strike_zone_width_px=STRIKE_ZONE_WIDTH_PX,
+        strike_zone_center_x=STRIKE_ZONE_CENTER_X
+    )
 
 # 強調動画と元動画を開く
 cap_enhance = cv2.VideoCapture(enhance_video)
@@ -78,6 +82,9 @@ if analyzer:
     analyzer.set_fps(fps)
 
 print(f"\nProcessing frames and detecting objects...")
+
+import time
+start_time = time.time()
 
 frame_count = 0
 while True:
@@ -210,5 +217,28 @@ cap_enhance.release()
 cap_original.release()
 out.release()
 
-print(f"\nDetection completed!")
+# 処理時間の計算
+end_time = time.time()
+processing_time = end_time - start_time
+video_duration = frame_count / fps if fps > 0 else 0
+processing_speed = video_duration / processing_time if processing_time > 0 else 0
+
+print(f"\n{'='*60}")
+print(f"Detection completed!")
+print(f"{'='*60}")
 print(f"Output saved to: {output_path}")
+print(f"\n【Processing Statistics】")
+print(f"  Total frames: {frame_count}")
+print(f"  Video duration: {video_duration:.2f} seconds")
+print(f"  Processing time: {processing_time:.2f} seconds")
+print(f"  Processing speed: {processing_speed:.2f}x realtime")
+if processing_speed < 1.0:
+    print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
+else:
+    print(f"  (実時間の{processing_speed:.2f}倍速で処理できています)")
+
+# ピッチング解析のJSON出力
+if analyzer:
+    json_output_path = os.path.join(video_dir, f"{base_name}_trajectory.json")
+    analyzer.export_to_json(json_output_path, video_file=original_video)
+    print(f"\nTrajectory data saved to: {json_output_path}")
