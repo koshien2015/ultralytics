@@ -58,7 +58,19 @@ next_object_id = 0
 analyzer = None
 if ENABLE_PITCHING_ANALYSIS:
     print("Initializing pitching analyzer...")
+
+    # キャリブレーションファイルを自動検索
+    calibration_path = None
+    calibration_file = os.path.join(script_dir, "calibrations", f"{base_name}_calibration.json")
+    if os.path.exists(calibration_file):
+        calibration_path = calibration_file
+        print(f"✅ Calibration file found: {calibration_file}")
+    else:
+        print(f"⚠️  No calibration file found (searched: {calibration_file})")
+        print("   Continuing without calibration (visualization only)")
+
     analyzer = PitchingAnalyzer(
+        calibration_path=calibration_path,
         strike_zone_width_px=STRIKE_ZONE_WIDTH_PX,
         strike_zone_center_x=STRIKE_ZONE_CENTER_X
     )

@@ -21,9 +21,12 @@ CLASS_PITCHER_RELEASE = 5  # pitcher_release
 class PitchingAnalyzer:
     """ピッチング解析クラス"""
 
-    def __init__(self, strike_zone_width_px=150, strike_zone_center_x=None):
+    def __init__(self, calibration_path=None, strike_zone_width_px=150, strike_zone_center_x=None):
         """
         Args:
+            calibration_path: キャリブレーションJSONファイルのパス（オプション）
+                            - あり: 実世界座標（メートル）を算出
+                            - なし: 軌跡描画のみ（座標算出なし）
             strike_zone_width_px: ストライクゾーンの幅（ピクセル）
             strike_zone_center_x: ストライクゾーンの中央X座標（ピクセル）、Noneの場合は初回検出時に自動設定
         """
@@ -37,15 +40,26 @@ class PitchingAnalyzer:
 
         # ストライクゾーンの固定値
         self.STRIKE_ZONE_WIDTH_PX = strike_zone_width_px
-        self.STRIKE_ZONE_CENTER_X = strike_zone_center_x  # Noneの場合は初回捕手検出時に設定
+        self.STRIKE_ZONE_CENTER_X = strike_zone_center_x
 
-        # カメラ角度（度）- 投手-捕手ラインに対する回転角度
-        self.camera_angle = 90.0  # デフォルトは正面（90度）
-        self.camera_angle_locked = False  # カメラ角度を固定したか
+        # ホモグラフィ変換（オプション）
+        self.homography_matrix = None
+        self.calibration_data = None
+        self.use_calibration = False  # キャリブレーション使用フラグ
 
         # 軌跡データの記録
         self.pitches = []  # 全投球のリスト
         self.current_pitch = None  # 現在の投球データ
+
+        # キャリブレーションファイルがあれば読み込む
+        if calibration_path:
+            try:
+                self.load_calibration(calibration_path)
+                self.use_calibration = True
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to load calibration: {e}")
+                print("   Continuing without calibration (visualization only)")
+                self.use_calibration = False
 
     def estimate_strike_zone_from_batter_catcher(self, batter_bbox, catcher_bbox):
         """
@@ -91,6 +105,54 @@ class PitchingAnalyzer:
 
         return self.strike_zone
 
+
+    def load_calibration(self, calibration_path):
+        """
+        キャリブレーションデータを読み込み（オプション）
+
+        Args:
+            calibration_path: キャリブレーションJSONファイルのパス
+
+        Raises:
+            FileNotFoundError: ファイルが見つからない場合
+            ValueError: データが不正な場合
+            ImportError: homography_utilsが見つからない場合
+        """
+        from homography_utils import load_calibration_from_json
+
+        # JSONファイルからキャリブレーションデータを読み込み
+        self.calibration_data = load_calibration_from_json(calibration_path)
+
+        # ホモグラフィ行列を取得
+        self.homography_matrix = np.array(
+            self.calibration_data['homography_matrix'],
+            dtype=np.float32
+        )
+
+        print(f"✅ Calibration loaded: {self.calibration_data['video_id']}")
+        print(f"   Frame: {self.calibration_data['frame_number']}")
+        print(f"   Points: {len(self.calibration_data['points'])} points")
+        print(f"   Mode: Real-world coordinates (meters)")
+
+    def transform_to_real_world(self, x_pixel, y_pixel):
+        """
+        ピクセル座標を実世界座標に変換（ホモグラフィ使用）
+
+        Args:
+            x_pixel, y_pixel: ピクセル座標
+
+        Returns:
+            (x_real, y_real): 実世界座標（メートル単位）、またはNone（キャリブレーション未使用時）
+        """
+        if not self.use_calibration or self.homography_matrix is None:
+            return None
+
+        # OpenCVのperspectiveTransformを使用
+        point = np.array([[[x_pixel, y_pixel]]], dtype=np.float32)
+        transformed = cv2.perspectiveTransform(point, self.homography_matrix)
+
+        x_real, y_real = transformed[0][0]
+        return (float(x_real), float(y_real))
 
     def estimate_camera_angle(self, pitcher_bbox, catcher_bbox, debug=False):
         """
@@ -224,10 +286,8 @@ class PitchingAnalyzer:
         strike_bottom = self.strike_zone['bottom']
 
         # X座標: ストライクゾーン中心からの距離をストライクゾーン幅で正規化
-        # カメラ角度を考慮して補正
         x_offset = x_pixel - center_x
-        x_offset_corrected = x_offset / np.cos(np.radians(90 - self.camera_angle))
-        x_norm = x_offset_corrected / zone_width
+        x_norm = x_offset / zone_width
 
         # Y座標: ストライクゾーン高さで正規化
         strike_height = strike_bottom - strike_top
@@ -284,12 +344,21 @@ class PitchingAnalyzer:
         Args:
             frame: 描画対象のフレーム
             elapsed_time: リリースからの経過時間（秒）
-            ball_3d: ボールの3D座標 (x_norm, y_norm, z)
+            ball_3d: ボールの3D座標 (x_real, y_real, z) ※キャリブレーション使用時のみ
 
         Returns:
             frame: 情報を描画したフレーム
         """
         y_pos = 30
+
+        # キャリブレーション状態
+        if self.use_calibration:
+            cv2.putText(frame, "Mode: Calibrated (Real-world coords)", (10, y_pos),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        else:
+            cv2.putText(frame, "Mode: Visualization only (No calibration)", (10, y_pos),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
+        y_pos += 25
 
         # リリース情報
         if self.release_frame is not None:
@@ -309,15 +378,10 @@ class PitchingAnalyzer:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             y_pos += 25
 
-        # カメラ角度
-        cv2.putText(frame, f"Camera Angle: {self.camera_angle:.1f}deg", (10, y_pos),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        y_pos += 25
-
-        # 3D座標
-        if ball_3d is not None:
-            x_norm, y_norm, z = ball_3d
-            cv2.putText(frame, f"Ball 3D: X={x_norm:.3f} Y={y_norm:.3f} Z={z:.3f}s", (10, y_pos),
+        # 実世界座標（キャリブレーション使用時のみ）
+        if ball_3d is not None and self.use_calibration:
+            x_real, y_real, z = ball_3d
+            cv2.putText(frame, f"Ball: X={x_real:.3f}m Y={y_real:.3f}m T={z:.3f}s", (10, y_pos),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
 
         return frame
@@ -364,19 +428,6 @@ class PitchingAnalyzer:
             # どちらかが検出されない場合はクリア
             self.strike_zone = None
 
-        # カメラ角度を推定（最初のmotion検出時にロック）
-        if pitcher_bbox and catcher_bbox and not self.camera_angle_locked:
-            # 投手がmotion状態の時のみカメラ角度を設定
-            for result in detection_results:
-                boxes = result.boxes
-                for box in boxes:
-                    cls = int(box.cls[0])
-                    if cls == CLASS_PITCHER_MOTION:  # motion状態
-                        self.camera_angle = self.estimate_camera_angle(pitcher_bbox, catcher_bbox, debug=True)
-                        self.camera_angle_locked = True
-                        print(f"✓ Camera angle locked at {self.camera_angle:.1f}°")
-                        break
-
         return batter_bbox, catcher_bbox, pitcher_bbox
 
     def update(self, detection_results, frame_number):
@@ -420,7 +471,7 @@ class PitchingAnalyzer:
         # 経過時間を取得
         elapsed_time = self.get_elapsed_time(frame_number)
 
-        # ボール検出と3D座標計算（クラス0）
+        # ボール検出と座標計算（クラス0）
         ball_3d = None
         for result in detection_results:
             boxes = result.boxes
@@ -431,22 +482,35 @@ class PitchingAnalyzer:
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
 
-                    # XY正規化座標
-                    normalized = self.normalize_position(center_x, center_y)
-                    if normalized and elapsed_time is not None:
-                        x_norm, y_norm = normalized
-                        z = elapsed_time  # Z座標は経過時間
-                        ball_3d = (x_norm, y_norm, z)
+                    # キャリブレーション使用時のみ実世界座標を算出
+                    if self.use_calibration:
+                        # ホモグラフィ変換で実世界座標に変換
+                        real_world = self.transform_to_real_world(center_x, center_y)
+                        if real_world and elapsed_time is not None:
+                            x_real, y_real = real_world
+                            z = elapsed_time  # Z座標は経過時間
+                            ball_3d = (x_real, y_real, z)
 
-                        # 軌跡データを記録
+                            # 軌跡データを記録（実世界座標）
+                            if self.current_pitch is not None:
+                                self.current_pitch['trajectory'].append({
+                                    'frame': frame_number,
+                                    'time': elapsed_time,
+                                    'x': x_real,
+                                    'y': y_real,
+                                    'z': z,
+                                    'pixel_x': center_x,
+                                    'pixel_y': center_y
+                                })
+                    else:
+                        # キャリブレーションなし：ピクセル座標のみ記録（座標算出なし）
                         if self.current_pitch is not None:
                             self.current_pitch['trajectory'].append({
                                 'frame': frame_number,
-                                'time': elapsed_time,
-                                'x': x_norm,
-                                'y': y_norm,
-                                'z': z
+                                'pixel_x': center_x,
+                                'pixel_y': center_y
                             })
+
                     break  # 最初のボールのみ
 
         return {
@@ -455,8 +519,7 @@ class PitchingAnalyzer:
             'batter_bbox': batter_bbox,
             'catcher_bbox': catcher_bbox,
             'pitcher_bbox': pitcher_bbox,
-            'ball_3d': ball_3d,
-            'camera_angle': self.camera_angle
+            'ball_3d': ball_3d
         }
 
     def draw(self, frame, frame_number, ball_3d=None, draw_strike_zone=True, draw_info=True):
@@ -503,8 +566,16 @@ class PitchingAnalyzer:
         metadata = {
             'video_file': video_file if video_file else 'unknown',
             'fps': self.fps,
-            'camera_angle': self.camera_angle
+            'use_calibration': self.use_calibration
         }
+
+        # キャリブレーション情報
+        if self.use_calibration and self.calibration_data:
+            metadata['calibration'] = {
+                'video_id': self.calibration_data['video_id'],
+                'frame_number': self.calibration_data['frame_number'],
+                'calibration_date': self.calibration_data['calibration_date']
+            }
 
         # ストライクゾーン情報
         if self.strike_zone is not None:
@@ -535,7 +606,5 @@ class PitchingAnalyzer:
         self.prev_pitcher_state = None
         self.strike_zone = None
         self.STRIKE_ZONE_CENTER_X = None  # 次の打席で再設定
-        self.camera_angle = 90.0  # デフォルトに戻す
-        self.camera_angle_locked = False  # ロック解除
         self.pitches = []  # 軌跡データもリセット
         self.current_pitch = None
