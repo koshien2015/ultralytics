@@ -42,9 +42,8 @@ class PitchingAnalyzer:
         self.STRIKE_ZONE_WIDTH_PX = strike_zone_width_px
         self.STRIKE_ZONE_CENTER_X = strike_zone_center_x
 
-        # ホモグラフィ変換（オプション）
-        self.homography_matrix = None
-        self.calibration_data = None
+        # カメラキャリブレーション（PnPベース）
+        self.camera_calibration = None
         self.use_calibration = False  # キャリブレーション使用フラグ
 
         # 軌跡データの記録
@@ -108,7 +107,7 @@ class PitchingAnalyzer:
 
     def load_calibration(self, calibration_path):
         """
-        キャリブレーションデータを読み込み（オプション）
+        キャリブレーションデータを読み込み（PnPベース）
 
         Args:
             calibration_path: キャリブレーションJSONファイルのパス
@@ -116,43 +115,40 @@ class PitchingAnalyzer:
         Raises:
             FileNotFoundError: ファイルが見つからない場合
             ValueError: データが不正な場合
-            ImportError: homography_utilsが見つからない場合
+            ImportError: camera_pnp_utilsが見つからない場合
         """
-        from homography_utils import load_calibration_from_json
+        from camera_pnp_utils import create_camera_calibration
 
-        # JSONファイルからキャリブレーションデータを読み込み
-        self.calibration_data = load_calibration_from_json(calibration_path)
+        # PnPベースのカメラキャリブレーションを作成
+        self.camera_calibration = create_camera_calibration(calibration_path)
 
-        # ホモグラフィ行列を取得
-        self.homography_matrix = np.array(
-            self.calibration_data['homography_matrix'],
-            dtype=np.float32
-        )
+        print(f"✅ Camera calibration loaded (PnP)")
+        print(f"   Video: {self.camera_calibration.calibration_data['video_id']}")
+        print(f"   Frame: {self.camera_calibration.calibration_data['frame_number']}")
+        print(f"   Points: {len(self.camera_calibration.object_points)} points")
+        print(f"   Mode: Full 3D coordinates (X, Y, Z in meters)")
 
-        print(f"✅ Calibration loaded: {self.calibration_data['video_id']}")
-        print(f"   Frame: {self.calibration_data['frame_number']}")
-        print(f"   Points: {len(self.calibration_data['points'])} points")
-        print(f"   Mode: Real-world coordinates (meters)")
-
-    def transform_to_real_world(self, x_pixel, y_pixel):
+    def transform_to_3d(self, x_pixel, y_pixel):
         """
-        ピクセル座標を実世界座標に変換（ホモグラフィ使用）
+        ピクセル座標を3D実世界座標に変換（PnP使用）
 
         Args:
             x_pixel, y_pixel: ピクセル座標
 
         Returns:
-            (x_real, y_real): 実世界座標（メートル単位）、またはNone（キャリブレーション未使用時）
+            (x_real, y_real, z_real): 実世界座標（メートル単位）、またはNone（キャリブレーション未使用時）
         """
-        if not self.use_calibration or self.homography_matrix is None:
+        if not self.use_calibration or self.camera_calibration is None:
             return None
 
-        # OpenCVのperspectiveTransformを使用
-        point = np.array([[[x_pixel, y_pixel]]], dtype=np.float32)
-        transformed = cv2.perspectiveTransform(point, self.homography_matrix)
-
-        x_real, y_real = transformed[0][0]
-        return (float(x_real), float(y_real))
+        try:
+            # PnPベースの3D座標推定
+            x, y, z = self.camera_calibration.transform_to_3d(x_pixel, y_pixel)
+            return (float(x), float(y), float(z))
+        except ValueError as e:
+            # 交点が見つからない場合など
+            print(f"Warning: transform_to_3d failed for ({x_pixel}, {y_pixel}): {e}")
+            return None
 
     def estimate_camera_angle(self, pitcher_bbox, catcher_bbox, debug=False):
         """
@@ -380,8 +376,8 @@ class PitchingAnalyzer:
 
         # 実世界座標（キャリブレーション使用時のみ）
         if ball_3d is not None and self.use_calibration:
-            x_real, y_real, z = ball_3d
-            cv2.putText(frame, f"Ball: X={x_real:.3f}m Y={y_real:.3f}m T={z:.3f}s", (10, y_pos),
+            x_real, y_real, z_real = ball_3d
+            cv2.putText(frame, f"Ball: X={x_real:.3f}m Y={y_real:.3f}m Z={z_real:.3f}m", (10, y_pos),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
 
         return frame
@@ -484,21 +480,20 @@ class PitchingAnalyzer:
 
                     # キャリブレーション使用時のみ実世界座標を算出
                     if self.use_calibration:
-                        # ホモグラフィ変換で実世界座標に変換
-                        real_world = self.transform_to_real_world(center_x, center_y)
-                        if real_world and elapsed_time is not None:
-                            x_real, y_real = real_world
-                            z = elapsed_time  # Z座標は経過時間
-                            ball_3d = (x_real, y_real, z)
+                        # PnPで3D座標に変換
+                        world_3d = self.transform_to_3d(center_x, center_y)
+                        if world_3d is not None:
+                            x_real, y_real, z_real = world_3d
+                            ball_3d = (x_real, y_real, z_real)
 
-                            # 軌跡データを記録（実世界座標）
+                            # 軌跡データを記録（実世界3D座標）
                             if self.current_pitch is not None:
                                 self.current_pitch['trajectory'].append({
                                     'frame': frame_number,
-                                    'time': elapsed_time,
+                                    'time': elapsed_time if elapsed_time is not None else 0.0,
                                     'x': x_real,
                                     'y': y_real,
-                                    'z': z,
+                                    'z': z_real,
                                     'pixel_x': center_x,
                                     'pixel_y': center_y
                                 })
@@ -570,11 +565,14 @@ class PitchingAnalyzer:
         }
 
         # キャリブレーション情報
-        if self.use_calibration and self.calibration_data:
+        if self.use_calibration and self.camera_calibration:
             metadata['calibration'] = {
-                'video_id': self.calibration_data['video_id'],
-                'frame_number': self.calibration_data['frame_number'],
-                'calibration_date': self.calibration_data['calibration_date']
+                'video_id': self.camera_calibration.calibration_data['video_id'],
+                'frame_number': self.camera_calibration.calibration_data['frame_number'],
+                'calibration_date': self.camera_calibration.calibration_data['calibration_date'],
+                'method': 'PnP (Perspective-n-Point)',
+                'camera_position': self.camera_calibration.get_camera_position().tolist(),
+                'reprojection_error': self.camera_calibration.calculate_reprojection_error()
             }
 
         # ストライクゾーン情報
