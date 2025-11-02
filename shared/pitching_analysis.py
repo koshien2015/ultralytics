@@ -50,6 +50,10 @@ class PitchingAnalyzer:
         self.pitches = []  # 全投球のリスト
         self.current_pitch = None  # 現在の投球データ
 
+        # デバッグフラグ（最初の数フレームだけデバッグ情報を出力）
+        self._debug_frame_count = 0
+        self._debug_max_frames = 5
+
         # キャリブレーションファイルがあれば読み込む
         if calibration_path:
             try:
@@ -128,26 +132,41 @@ class PitchingAnalyzer:
         print(f"   Points: {len(self.camera_calibration.object_points)} points")
         print(f"   Mode: Full 3D coordinates (X, Y, Z in meters)")
 
-    def transform_to_3d(self, x_pixel, y_pixel):
+    def transform_to_3d(self, x_pixel, y_pixel, debug=False):
         """
         ピクセル座標を3D実世界座標に変換（PnP使用）
 
         Args:
             x_pixel, y_pixel: ピクセル座標
+            debug: デバッグ情報を表示するか
 
         Returns:
             (x_real, y_real, z_real): 実世界座標（メートル単位）、またはNone（キャリブレーション未使用時）
         """
-        if not self.use_calibration or self.camera_calibration is None:
+        if not self.use_calibration:
+            if debug:
+                print(f"   ⚠️  use_calibration = False")
+            return None
+
+        if self.camera_calibration is None:
+            if debug:
+                print(f"   ⚠️  camera_calibration is None")
             return None
 
         try:
             # PnPベースの3D座標推定
             x, y, z = self.camera_calibration.transform_to_3d(x_pixel, y_pixel)
+            if debug:
+                print(f"   ✓ Transform success: ({x_pixel:.1f}, {y_pixel:.1f}) → ({x:.3f}, {y:.3f}, {z:.3f})")
             return (float(x), float(y), float(z))
         except ValueError as e:
             # 交点が見つからない場合など
-            print(f"Warning: transform_to_3d failed for ({x_pixel}, {y_pixel}): {e}")
+            print(f"   ⚠️  Warning: transform_to_3d failed for ({x_pixel:.1f}, {y_pixel:.1f}): {e}")
+            return None
+        except Exception as e:
+            print(f"   ❌ Error: transform_to_3d unexpected error for ({x_pixel:.1f}, {y_pixel:.1f}): {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def estimate_camera_angle(self, pitcher_bbox, catcher_bbox, debug=False):
@@ -480,8 +499,14 @@ class PitchingAnalyzer:
 
                     # キャリブレーション使用時のみ実世界座標を算出
                     if self.use_calibration:
+                        # デバッグ情報を出力（最初の数フレームのみ）
+                        debug_enabled = self._debug_frame_count < self._debug_max_frames
+                        if debug_enabled:
+                            print(f"\n🔍 Frame {frame_number}: Ball detected at ({center_x}, {center_y})")
+                            self._debug_frame_count += 1
+
                         # PnPで3D座標に変換
-                        world_3d = self.transform_to_3d(center_x, center_y)
+                        world_3d = self.transform_to_3d(center_x, center_y, debug=debug_enabled)
                         if world_3d is not None:
                             x_real, y_real, z_real = world_3d
                             ball_3d = (x_real, y_real, z_real)
@@ -497,6 +522,8 @@ class PitchingAnalyzer:
                                     'pixel_x': center_x,
                                     'pixel_y': center_y
                                 })
+                        elif debug_enabled:
+                            print(f"   ⚠️  Failed to get 3D coordinates")
                     else:
                         # キャリブレーションなし：ピクセル座標のみ記録（座標算出なし）
                         if self.current_pitch is not None:
