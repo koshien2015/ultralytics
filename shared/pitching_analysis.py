@@ -293,32 +293,32 @@ class PitchingAnalyzer:
 
         # リリース情報
         if self.release_frame is not None:
-            cv2.putText(frame, f"Release Frame: {self.release_frame}", (10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            # cv2.putText(frame, f"Release Frame: {self.release_frame}", (10, y_pos),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             y_pos += 25
 
         # 経過時間
         if elapsed_time is not None:
-            cv2.putText(frame, f"Time: {elapsed_time:.3f}s", (10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            # cv2.putText(frame, f"Time: {elapsed_time:.3f}s", (10, y_pos),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             y_pos += 25
 
         # ストライクゾーン情報
         if self.strike_zone is not None:
-            cv2.putText(frame, "Strike Zone: Detected", (10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            # cv2.putText(frame, "Strike Zone: Detected", (10, y_pos),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             y_pos += 25
 
         # カメラ角度
-        cv2.putText(frame, f"Camera Angle: {self.camera_angle:.1f}deg", (10, y_pos),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        # cv2.putText(frame, f"Camera Angle: {self.camera_angle:.1f}deg", (10, y_pos),
+        #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         y_pos += 25
 
         # 3D座標
         if ball_3d is not None:
             x_norm, y_norm, z = ball_3d
-            cv2.putText(frame, f"Ball 3D: X={x_norm:.3f} Y={y_norm:.3f} Z={z:.3f}s", (10, y_pos),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
+            # cv2.putText(frame, f"Ball 3D: X={x_norm:.3f} Y={y_norm:.3f} Z={z:.3f}s", (10, y_pos),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
 
         return frame
 
