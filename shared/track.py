@@ -12,23 +12,33 @@ if len(sys.argv) > 1:
 else:
     original_video = "test.mp4"
 
+# マスク動画のパス（マスクを使う場合はここに指定、使わない場合はNone）
+mask_video = None
+
+# 検出に使用する動画を決定
+detection_video = mask_video if mask_video else original_video
+
 # ファイル名とディレクトリを取得
-base_name = os.path.splitext(os.path.basename(original_video))[0]
-video_dir = os.path.dirname(original_video) if os.path.dirname(original_video) else "."
+base_name = os.path.splitext(os.path.basename(detection_video))[0]
+video_dir = os.path.dirname(detection_video) if os.path.dirname(detection_video) else "."
 
 # 強調動画のパスを設定
 enhance_video = os.path.join(video_dir, f"{base_name}_enhance.mp4")
 
-print(f"Original video: {original_video}")
+if mask_video:
+    print(f"Original video (for drawing): {original_video}")
+    print(f"Mask video (for detection): {mask_video}")
+else:
+    print(f"Original video: {original_video}")
 print(f"Generating enhanced video for detection...")
 
-# tennisモジュールで強調動画を生成
-tennis.run(original_video, enhance_video_path=enhance_video)
+# tennisモジュールで強調動画を生成（検出用の動画から）
+tennis.run(detection_video, enhance_video_path=enhance_video)
 
 print(f"\nLoading YOLO model...")
 # YOLOモデルをロード（同じディレクトリ内）
 script_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(script_dir, "yolo8m_20250510.pt")
+model_path = os.path.join(script_dir, "yolo8m_20251109.pt")
 model = YOLO(model_path)
 
 # 検出対象クラスを指定（空リストで全クラス、数字を指定で特定クラスのみ）
@@ -39,14 +49,14 @@ target_classes = [0]  # 検出したいクラスIDをここに指定
 
 # 軌跡描画設定
 DRAW_TRAJECTORY = True  # 軌跡を描画するか
-MAX_TRAJECTORY_LENGTH = 30  # 軌跡の最大長さ（フレーム数）
-TRAJECTORY_FADE_FRAMES = 20  # 検出されなくなってから何フレームで消えるか
+MAX_TRAJECTORY_LENGTH = 60  # 軌跡の最大長さ（フレーム数）
+TRAJECTORY_FADE_FRAMES = 60  # 検出されなくなってから何フレームで消えるか
 TRAJECTORY_COLOR = (0, 255 , 0)  # 軌跡の色（緑）
 TRAJECTORY_THICKNESS = 4  # 軌跡の太さ
 
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
-DRAW_STRIKE_ZONE = True  # ストライクゾーンを描画するか
+DRAW_STRIKE_ZONE = False  # ストライクゾーンを描画するか
 STRIKE_ZONE_WIDTH_PX = 50  # ストライクゾーンの幅（ピクセル）
 STRIKE_ZONE_CENTER_X = None  # ストライクゾーンの中央X座標（ピクセル）、Noneで初回捕手検出時に自動設定
 
@@ -134,9 +144,9 @@ while True:
 
             # バウンディングボックスとラベルを描画
             cv2.rectangle(frame_original, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            label = f"{model.names[cls]} {conf:.2f}"
-            cv2.putText(frame_original, label, (x1, y1-10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # label = f"{model.names[cls]} {conf:.2f}"
+            # cv2.putText(frame_original, label, (x1, y1-10),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     # 軌跡を更新（簡易的なマッチング）
     if DRAW_TRAJECTORY:
