@@ -6,6 +6,60 @@ from ultralytics import YOLO
 import tennis
 from pitching_analysis import PitchingAnalyzer
 
+
+def draw_neon_polyline(
+    frame,
+    points,
+    glow_color=(0, 255, 255),   # BGR（ここではシアン寄り）
+    core_color=(255, 255, 255), # 中心の線の色
+    glow_thickness=12,          # 光の太さ
+    core_thickness=2,           # 中心線の太さ
+    glow_blur=25,               # ぼかし量（奇数）
+    glow_intensity=0.8          # 光の強さ
+):
+    """
+    ネオン風の軌跡を描画する
+
+    Args:
+        frame: 描画対象のフレーム（BGR）
+        points: 軌跡の座標リスト [(x1, y1), (x2, y2), ...]
+        glow_color: 光の色（BGR）
+        core_color: 中心線の色（BGR）
+        glow_thickness: 光の太さ
+        core_thickness: 中心線の太さ
+        glow_blur: ぼかし量（奇数）
+        glow_intensity: 光の強さ（0.0〜1.0）
+
+    Returns:
+        ネオン効果を適用したフレーム
+    """
+    if len(points) < 2:
+        return frame
+
+    # numpy配列に変換
+    pts = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+
+    h, w = frame.shape[:2]
+
+    # 1. 黒のレイヤーを作成（光用）
+    glow_layer = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # 2. 太いラインを描画（光源）
+    cv2.polylines(glow_layer, [pts], isClosed=False, color=glow_color, thickness=glow_thickness, lineType=cv2.LINE_AA)
+
+    # 3. ぼかしてグロウを作る
+    glow_layer = cv2.GaussianBlur(glow_layer, (glow_blur, glow_blur), 0)
+
+    # 4. 元フレームと合成（addWeightedで軽く重ねる）
+    # frame * 1.0 + glow_layer * glow_intensity
+    neon_frame = cv2.addWeighted(frame, 1.0, glow_layer, glow_intensity, 0)
+
+    # 5. 中心のシャープな線を上から引く
+    cv2.polylines(neon_frame, [pts], isClosed=False, color=core_color, thickness=core_thickness, lineType=cv2.LINE_AA)
+
+    return neon_frame
+
+
 # コマンドライン引数から動画パスを取得
 if len(sys.argv) > 1:
     original_video = sys.argv[1]
@@ -51,8 +105,14 @@ target_classes = [0]  # 検出したいクラスIDをここに指定
 DRAW_TRAJECTORY = True  # 軌跡を描画するか
 MAX_TRAJECTORY_LENGTH = 60  # 軌跡の最大長さ（フレーム数）
 TRAJECTORY_FADE_FRAMES = 60  # 検出されなくなってから何フレームで消えるか
-TRAJECTORY_COLOR = (0, 255 , 0)  # 軌跡の色（緑）
-TRAJECTORY_THICKNESS = 4  # 軌跡の太さ
+
+# ネオン効果設定
+TRAJECTORY_COLOR = (0, 255, 255)  # 軌跡の色（BGR: シアン）
+NEON_CORE_COLOR = (255, 255, 255)  # 中心線の色（BGR: 白）
+NEON_GLOW_THICKNESS = 15  # 光の太さ
+NEON_CORE_THICKNESS = 3  # 中心線の太さ
+NEON_GLOW_BLUR = 25  # ぼかし量（奇数推奨）
+NEON_GLOW_INTENSITY = 0.8  # 光の強さ（0.0〜1.0）
 
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
@@ -143,7 +203,7 @@ while True:
             current_centers.append((center_x, center_y, cls))
 
             # バウンディングボックスとラベルを描画
-            cv2.rectangle(frame_original, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # cv2.rectangle(frame_original, (x1, y1), (x2, y2), (0, 255, 0), 2)
             # label = f"{model.names[cls]} {conf:.2f}"
             # cv2.putText(frame_original, label, (x1, y1-10),
             #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -198,7 +258,7 @@ while True:
         for obj_id in trajectories_to_remove:
             del trajectories[obj_id]
 
-        # 軌跡を描画
+        # 軌跡を描画（ネオン効果）
         for obj_id, traj_data in trajectories.items():
             points = traj_data['points']
             frames_since_seen = frame_count - traj_data['last_seen']
@@ -207,16 +267,18 @@ while True:
             fade_alpha = max(0, 1 - (frames_since_seen / TRAJECTORY_FADE_FRAMES))
 
             if len(points) > 1 and fade_alpha > 0:
-                for i in range(1, len(points)):
-                    # 古い点ほど薄く、さらにフェードアウト
-                    alpha = (i / len(points)) * fade_alpha
-                    thickness = max(1, int(TRAJECTORY_THICKNESS * alpha))
-
-                    # フェードアウト時は色も薄く
-                    color = tuple(int(c * fade_alpha) for c in TRAJECTORY_COLOR)
-
-                    cv2.line(frame_original, points[i-1], points[i],
-                            color, thickness)
+                # ネオン効果で軌跡を描画
+                # glow_intensityにfade_alphaを適用してフェードアウト
+                frame_original = draw_neon_polyline(
+                    frame_original,
+                    points,
+                    glow_color=TRAJECTORY_COLOR,
+                    core_color=NEON_CORE_COLOR,
+                    glow_thickness=NEON_GLOW_THICKNESS,
+                    core_thickness=NEON_CORE_THICKNESS,
+                    glow_blur=NEON_GLOW_BLUR,
+                    glow_intensity=NEON_GLOW_INTENSITY * fade_alpha  # フェードアウト効果を適用
+                )
 
     out.write(frame_original)
     frame_count += 1
