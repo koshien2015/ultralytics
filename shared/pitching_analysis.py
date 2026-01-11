@@ -10,6 +10,7 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from perspective_transform import PerspectiveTransformer
 
 
 # 検出クラスID
@@ -21,11 +22,12 @@ CLASS_PITCHER_RELEASE = 5  # pitcher_release
 class PitchingAnalyzer:
     """ピッチング解析クラス"""
 
-    def __init__(self, strike_zone_width_px=150, strike_zone_center_x=None):
+    def __init__(self, strike_zone_width_px=150, strike_zone_center_x=None, calibration_file=None):
         """
         Args:
             strike_zone_width_px: ストライクゾーンの幅（ピクセル）
             strike_zone_center_x: ストライクゾーンの中央X座標（ピクセル）、Noneの場合は初回検出時に自動設定
+            calibration_file: 射影変換キャリブレーションファイル（JSONファイルパス）、Noneの場合は射影変換を使用しない
         """
         self.strike_zone = None
         self.release_frame = None
@@ -42,6 +44,13 @@ class PitchingAnalyzer:
         # カメラ角度（度）- 投手-捕手ラインに対する回転角度
         self.camera_angle = 90.0  # デフォルトは正面（90度）
         self.camera_angle_locked = False  # カメラ角度を固定したか
+
+        # 射影変換（オプショナル）
+        self.transformer = None
+        if calibration_file:
+            self.transformer = PerspectiveTransformer(calibration_file)
+            if self.transformer.is_calibrated:
+                print(f"✅ Perspective transformation enabled")
 
         # 軌跡データの記録
         self.pitches = []  # 全投球のリスト
@@ -422,6 +431,7 @@ class PitchingAnalyzer:
 
         # ボール検出と3D座標計算（クラス0）
         ball_3d = None
+        ball_field_2d = None  # 射影変換後のフィールド座標
         for result in detection_results:
             boxes = result.boxes
             for box in boxes:
@@ -438,15 +448,27 @@ class PitchingAnalyzer:
                         z = elapsed_time  # Z座標は経過時間
                         ball_3d = (x_norm, y_norm, z)
 
+                        # 射影変換でフィールド座標を取得（オプショナル）
+                        if self.transformer and self.transformer.is_calibrated:
+                            ball_field_2d = self.transformer.image_to_field(center_x, center_y)
+
                         # 軌跡データを記録
                         if self.current_pitch is not None:
-                            self.current_pitch['trajectory'].append({
+                            trajectory_point = {
                                 'frame': frame_number,
                                 'time': elapsed_time,
                                 'x': x_norm,
                                 'y': y_norm,
-                                'z': z
-                            })
+                                'z': z,
+                                'pixel_x': center_x,
+                                'pixel_y': center_y
+                            }
+                            # 射影変換座標も追加（利用可能な場合）
+                            if ball_field_2d:
+                                trajectory_point['field_x'] = ball_field_2d[0]
+                                trajectory_point['field_z'] = ball_field_2d[1]
+
+                            self.current_pitch['trajectory'].append(trajectory_point)
                     break  # 最初のボールのみ
 
         return {
@@ -456,6 +478,7 @@ class PitchingAnalyzer:
             'catcher_bbox': catcher_bbox,
             'pitcher_bbox': pitcher_bbox,
             'ball_3d': ball_3d,
+            'ball_field_2d': ball_field_2d,
             'camera_angle': self.camera_angle
         }
 

@@ -1,0 +1,53 @@
+{
+  "video_id": "test",
+  "calibration_date": "2025-11-02T10:00:00Z",
+  "frame_number": 0,
+  "points": [
+    {
+      "image_x": 640,
+      "image_y": 480,
+      "world_x": 0.0,
+      "world_y": 0.0,
+      "world_z": 0.0,
+      "label": "ホームベース",
+      "note": "ホームベースの中心"
+    },
+    {
+      "image_x": 740,
+      "image_y": 480,
+      "world_x": 0.432,
+      "world_y": 0.0,
+      "world_z": 0.0,
+      "label": "一塁側ライン",
+      "note": "ホームベースから1フィート"
+    },
+    {
+      "image_x": 640,
+      "image_y": 380,
+      "world_x": 0.0,
+      "world_y": 1.0,
+      "world_z": 0.0,
+      "label": "ピッチャー側",
+      "note": "1メートル前方"
+    },
+    {
+      "image_x": 740,
+      "image_y": 380,
+      "world_x": 0.432,
+      "world_y": 1.0,
+      "world_z": 0.0,
+      "label": "一塁前方",
+      "note": "対角点"
+    }
+  ],
+  "homography_matrix": [
+    [0.00432, 0.0, -2.7648],
+    [0.0, -0.01, 4.8],
+    [0.0, 0.0, 1.0]
+  ],
+  "frame_dimensions": {
+    "width": 1280,
+    "height": 720
+  },
+  "notes": "テスト用のキャリブレーションデータ"
+}

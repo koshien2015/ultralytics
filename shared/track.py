@@ -5,6 +5,7 @@ import numpy as np
 from ultralytics import YOLO
 import tennis
 from pitching_analysis import PitchingAnalyzer
+from topdown_view import TopDownView
 
 
 def draw_neon_polyline(
@@ -120,6 +121,11 @@ DRAW_STRIKE_ZONE = False  # ストライクゾーンを描画するか
 STRIKE_ZONE_WIDTH_PX = 50  # ストライクゾーンの幅（ピクセル）
 STRIKE_ZONE_CENTER_X = None  # ストライクゾーンの中央X座標（ピクセル）、Noneで初回捕手検出時に自動設定
 
+# 射影変換・真上ビュー設定
+CALIBRATION_FILE = 'test2_calibration.json'  # キャリブレーションファイルのパス（例: "test8_calibration.json"）、Noneで無効
+SAVE_TOPDOWN_VIDEO = True  # 真上ビューを動画として保存するか（CALIBRATION_FILEが必要、Docker環境推奨）
+SHOW_TOPDOWN_VIEW = False  # 真上ビューをリアルタイム表示するか（Docker環境では動作しない）
+
 # 各物体の軌跡を保存する辞書 {物体ID: {'points': [(x, y), ...], 'last_seen': frame_number}}
 trajectories = {}
 next_object_id = 0
@@ -128,10 +134,45 @@ next_object_id = 0
 analyzer = None
 if ENABLE_PITCHING_ANALYSIS:
     print("Initializing pitching analyzer...")
+
+    # キャリブレーションファイルのパス解決
+    calibration_path = None
+    if CALIBRATION_FILE:
+        if os.path.isabs(CALIBRATION_FILE):
+            calibration_path = CALIBRATION_FILE
+        else:
+            # 動画と同じディレクトリからの相対パス
+            calibration_path = os.path.join(video_dir, CALIBRATION_FILE)
+
+        if not os.path.exists(calibration_path):
+            print(f"⚠️  Warning: Calibration file not found: {calibration_path}")
+            calibration_path = None
+
     analyzer = PitchingAnalyzer(
         strike_zone_width_px=STRIKE_ZONE_WIDTH_PX,
-        strike_zone_center_x=STRIKE_ZONE_CENTER_X
+        strike_zone_center_x=STRIKE_ZONE_CENTER_X,
+        calibration_file=calibration_path
     )
+
+# 真上ビューの初期化
+topdown_view = None
+topdown_video_writer = None
+if (SHOW_TOPDOWN_VIEW or SAVE_TOPDOWN_VIDEO) and analyzer and analyzer.transformer and analyzer.transformer.is_calibrated:
+    print("Initializing top-down view...")
+    # キャップ野球用のパラメータ
+    topdown_view = TopDownView(
+        width=800,
+        height=1000,
+        meters_per_pixel=0.05,  # 5cm/pixel（詳細表示）
+        view_range_x=5.0,       # 横方向 ±5m
+        view_range_z=15.0       # 奥行き方向 15m（ホームベースから投手方向）
+    )
+
+    if SHOW_TOPDOWN_VIEW:
+        cv2.namedWindow('Top-Down View')
+
+elif (SHOW_TOPDOWN_VIEW or SAVE_TOPDOWN_VIDEO):
+    print("⚠️  Warning: Top-down view requires valid calibration file")
 
 # 強調動画と元動画を開く
 cap_enhance = cv2.VideoCapture(enhance_video)
@@ -146,6 +187,15 @@ height = int(cap_original.get(cv2.CAP_PROP_FRAME_HEIGHT))
 output_path = os.path.join(video_dir, f"{base_name}_detected.mp4")
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+if SAVE_TOPDOWN_VIDEO:
+        topdown_output_path = os.path.join(video_dir, f"{base_name}_topdown.mp4")
+        topdown_video_writer = cv2.VideoWriter(
+            topdown_output_path,
+            fourcc,
+            fps,
+            (topdown_view.width, topdown_view.height)
+        )
+        print(f"Top-down view will be saved to: {topdown_output_path}")
 
 # ピッチング解析にFPSを設定
 if analyzer:
@@ -172,9 +222,35 @@ while True:
         # 解析実行
         analysis_result = analyzer.update(results, frame_count)
 
-        # リリース検出時にログ出力
+        # リリース検出時にログ出力と真上ビューのリセット
         if analysis_result['is_release']:
             print(f"🎯 Release detected at frame {frame_count}")
+            if topdown_view:
+                topdown_view.clear_trajectory()
+
+        # 真上ビューを更新
+        if topdown_view and analysis_result['ball_field_2d']:
+            x_field, z_field = analysis_result['ball_field_2d']
+            topdown_view.add_trajectory_point(x_field, z_field)
+
+            # 真上ビューフレームを生成
+            topdown_frame = topdown_view.get_frame(
+                ball_position=(x_field, z_field),
+                show_trajectory=True
+            )
+
+            # リアルタイム表示（Docker環境では動作しない）
+            if SHOW_TOPDOWN_VIEW:
+                cv2.imshow('Top-Down View', topdown_frame)
+
+            # 動画として保存（Docker環境推奨）
+            if topdown_video_writer:
+                topdown_video_writer.write(topdown_frame)
+        elif topdown_view:
+            # ボールが検出されていない場合もフレームを出力（動画のフレーム数を合わせるため）
+            topdown_frame = topdown_view.get_frame(show_trajectory=True)
+            if topdown_video_writer:
+                topdown_video_writer.write(topdown_frame)
 
         # 描画
         frame_original = analyzer.draw(frame_original, frame_count,
@@ -289,6 +365,12 @@ cap_enhance.release()
 cap_original.release()
 out.release()
 
+# 真上ビュー動画を閉じる
+if topdown_video_writer:
+    topdown_video_writer.release()
+    print(f"✅ Top-down view video saved")
+    #cv2.destroyAllWindows()
+
 # 処理時間の計算
 end_time = time.time()
 processing_time = end_time - start_time
@@ -299,6 +381,8 @@ print(f"\n{'='*60}")
 print(f"Detection completed!")
 print(f"{'='*60}")
 print(f"Output saved to: {output_path}")
+if topdown_video_writer:
+    print(f"Top-down view saved to: {topdown_output_path}")
 print(f"\n【Processing Statistics】")
 print(f"  Total frames: {frame_count}")
 print(f"  Video duration: {video_duration:.2f} seconds")
