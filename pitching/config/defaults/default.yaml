@@ -1,0 +1,35 @@
+yolo:
+  model_path: "shared/yolo8m_20251109.pt"
+  min_confidence: 0.3
+  target_classes: [0]
+
+frame_diff:
+  threshold: 100
+  gamma: 1.5
+  dilation_size: 5
+  erosion_kernel_size: 10
+  area_min: 10.0
+  area_max: 5000.0
+
+fusion:
+  max_jump_px: 80.0
+  min_direction_cos: 0.3
+
+tracking:
+  max_trajectory_length: 60
+  fade_frames: 60
+  max_match_distance_px: 100.0
+
+strike_zone:
+  width_px: 50.0
+  fixed_center_x: null
+
+rendering:
+  draw_trajectory: true
+  draw_strike_zone: false
+  glow_color_bgr: [0, 255, 255]
+  core_color_bgr: [255, 255, 255]
+  glow_thickness: 15
+  core_thickness: 3
+  glow_blur: 25
+  glow_intensity: 0.8
