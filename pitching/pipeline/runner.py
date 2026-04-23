@@ -31,24 +31,24 @@ class PipelineRunner:
         self._stop_after = stop_after
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
+        # resume_from より前のステージはチェックポイントをロードしてスキップ
+        # resume_from ステージ以降は通常実行
         resuming = self._resume_from is not None
 
         for stage in self._stages:
             if resuming:
-                if self._store and self._store.exists(stage.name):
-                    logger.info("[%s] checkpoint found, loading and skipping", stage.name)
-                    artifacts = self._store.load(stage.name, PipelineArtifacts)
-                    ctx = dataclasses.replace(ctx, artifacts=artifacts)
-                else:
-                    logger.info("[%s] no checkpoint, running stage", stage.name)
-                    resuming = False
-
                 if stage.name == self._resume_from:
+                    # このステージから実行を開始する
                     resuming = False
-                    logger.info("[%s] resume point reached, executing from next stage", stage.name)
+                else:
+                    # 前のステージ: チェックポイントがあればロードして artifacts を更新
+                    if self._store and self._store.exists(stage.name):
+                        logger.info("[%s] skipped (checkpoint loaded)", stage.name)
+                        artifacts = self._store.load(stage.name, PipelineArtifacts)
+                        ctx = dataclasses.replace(ctx, artifacts=artifacts)
+                    else:
+                        logger.info("[%s] skipped (no checkpoint)", stage.name)
                     continue
-
-                continue
 
             logger.info("[%s] running", stage.name)
             ctx = stage.run(ctx)
