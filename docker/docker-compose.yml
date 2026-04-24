@@ -7,10 +7,15 @@ services:
     ipc: host
     volumes:
       - ../shared:/shared
+      - ../pitching:/workspace/pitching
+      - ../input:/workspace/input
+      - ../output:/workspace/output
+    working_dir: /workspace
     ports:
       - "6006:6006"
     environment:
       - DISPLAY=:1
+      - PYTHONPATH=/workspace
     networks:
       - cap_backend
     tty: true
@@ -21,6 +26,7 @@ services:
             - driver: nvidia
               capabilities: [gpu]
               count: all
-networks: 
+
+networks:
   cap_backend:
     external: true

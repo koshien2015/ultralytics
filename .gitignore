@@ -182,3 +182,7 @@ shared/datasets/exp10-new/
 *.mkv
 shared/exp10-new/
 *.lwi
+
+# Pipeline I/O
+input/
+output/
