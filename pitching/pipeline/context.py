@@ -52,3 +52,7 @@ class PipelineContext:
     @property
     def output_json_path(self) -> Path:
         return self.output_dir / f"{self.base_name}_trajectory.json"
+
+    @property
+    def output_pose_json_path(self) -> Path:
+        return self.output_dir / f"{self.base_name}_pose_analysis.json"

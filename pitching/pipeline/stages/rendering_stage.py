@@ -33,6 +33,7 @@ class RenderingStage:
         ctx.output_dir.mkdir(parents=True, exist_ok=True)
         self._write_video(ctx)
         self._write_json(ctx)
+        self._write_pose_json(ctx)
         return ctx
 
     def _write_video(self, ctx: PipelineContext) -> None:
@@ -126,3 +127,66 @@ class RenderingStage:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
         logger.info("RenderingStage: JSON saved to %s", ctx.output_json_path)
+
+    def _write_pose_json(self, ctx: PipelineContext) -> None:
+        pitcher_data = []
+        for pm in ctx.artifacts.pitcher_metrics:
+            pitcher_data.append({
+                "pitch_id": pm.pitch_id,
+                "release_frame": pm.release_frame,
+                "release_wrist_x": pm.release_wrist_x,
+                "release_wrist_y": pm.release_wrist_y,
+                "release_elbow_angle_deg": pm.release_elbow_angle_deg,
+                "hip_rotation_range_deg": pm.hip_rotation_range_deg,
+                "frames": [
+                    {
+                        "frame": f.frame_index,
+                        "elbow_angle_deg": f.elbow_angle_deg,
+                        "shoulder_tilt_deg": f.shoulder_tilt_deg,
+                        "hip_angle_deg": f.hip_angle_deg,
+                        "front_knee_angle_deg": f.front_knee_angle_deg,
+                        "wrist_x": f.wrist_x,
+                        "wrist_y": f.wrist_y,
+                    }
+                    for f in pm.frames
+                ],
+            })
+
+        batter_data = []
+        for bm in ctx.artifacts.batter_metrics:
+            batter_data.append({
+                "pitch_id": bm.pitch_id,
+                "swing_start_frame": bm.swing_start_frame,
+                "swing_end_frame": bm.swing_end_frame,
+                "wrist_path": [{"x": x, "y": y} for x, y in bm.wrist_path],
+                "hip_rotation_range_deg": bm.hip_rotation_range_deg,
+                "avg_shoulder_level_diff_px": bm.avg_shoulder_level_diff_px,
+                "head_displacement_px": bm.head_displacement_px,
+                "frames": [
+                    {
+                        "frame": f.frame_index,
+                        "wrist_x": f.wrist_x,
+                        "wrist_y": f.wrist_y,
+                        "hip_angle_deg": f.hip_angle_deg,
+                        "shoulder_level_diff_px": f.shoulder_level_diff_px,
+                        "head_x": f.head_x,
+                        "head_y": f.head_y,
+                        "front_knee_angle_deg": f.front_knee_angle_deg,
+                    }
+                    for f in bm.frames
+                ],
+            })
+
+        output = {
+            "metadata": {
+                "video_file": str(ctx.video_path),
+                "fps": ctx.fps,
+            },
+            "pitcher": pitcher_data,
+            "batter": batter_data,
+        }
+
+        with open(ctx.output_pose_json_path, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+
+        logger.info("RenderingStage: pose JSON saved to %s", ctx.output_pose_json_path)
