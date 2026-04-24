@@ -1,0 +1,11 @@
+version: '3.7'
+
+services:
+  yolov8:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all

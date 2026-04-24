@@ -19,13 +19,8 @@ services:
     networks:
       - cap_backend
     tty: true
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              count: all
+    # GPU を使う環境では docker-compose.gpu.yml を併用する:
+    # docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 
 networks:
   cap_backend:
