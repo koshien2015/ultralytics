@@ -15,6 +15,10 @@ fusion:
   max_jump_px: 80.0
   min_direction_cos: 0.3
 
+pose:
+  model_path: "yolov8m-pose.pt"
+  min_keypoint_confidence: 0.3
+
 tracking:
   max_trajectory_length: 60
   fade_frames: 60

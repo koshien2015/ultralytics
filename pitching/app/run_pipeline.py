@@ -19,6 +19,7 @@ from pitching.domain.entities.strike_zone import StrikeZone, StrikeZoneSeries
 from pitching.domain.entities.track import Track, TrackPoint
 from pitching.infra.ml.diff_detector import FrameDiffDetector
 from pitching.infra.ml.null_pose_estimator import NullPoseEstimator
+from pitching.infra.ml.yolov8_pose_estimator import UltralyticsYoloPoseEstimator
 from pitching.infra.ml.tracker import NearestNeighborTracker
 from pitching.infra.ml.yolo_detector import UltralyticsYoloDetector
 from pitching.infra.storage.checkpoint import JsonCheckpointStore
@@ -75,7 +76,10 @@ def build_stages(cfg: PipelineConfig) -> list:
         fade_frames=cfg.tracking.fade_frames,
         max_match_distance_px=cfg.tracking.max_match_distance_px,
     )
-    pose_estimator = NullPoseEstimator()
+    pose_estimator = UltralyticsYoloPoseEstimator(
+        model_path=cfg.pose.model_path,
+        min_keypoint_confidence=cfg.pose.min_keypoint_confidence,
+    )
 
     return [
         FrameDiffStage(diff_detector),

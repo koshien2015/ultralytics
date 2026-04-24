@@ -48,10 +48,16 @@ class RenderingConfig(BaseModel):
     glow_intensity: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
+class PoseConfig(BaseModel):
+    model_path: str = "yolov8m-pose.pt"
+    min_keypoint_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
+
+
 class PipelineConfig(BaseModel):
     yolo: YoloConfig = Field(default_factory=YoloConfig)
     frame_diff: FrameDiffConfig = Field(default_factory=FrameDiffConfig)
     fusion: FusionConfig = Field(default_factory=FusionConfig)
+    pose: PoseConfig = Field(default_factory=PoseConfig)
     tracking: TrackingConfig = Field(default_factory=TrackingConfig)
     strike_zone: StrikeZoneConfig = Field(default_factory=StrikeZoneConfig)
     rendering: RenderingConfig = Field(default_factory=RenderingConfig)
