@@ -18,6 +18,8 @@ fusion:
 pose:
   model_path: "yolov8m-pose.pt"
   min_keypoint_confidence: 0.3
+  throwing_hand: "right"
+  batting_hand: "right"
 
 tracking:
   max_trajectory_length: 60

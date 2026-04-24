@@ -14,22 +14,28 @@ from pitching.domain.entities.detection import (
     YoloDetection,
 )
 from pitching.domain.entities.pitch import Pitch, PitchTrajectoryPoint, ReleaseEvent
+from pitching.domain.entities.batter_metrics import BatterSwingMetrics
+from pitching.domain.entities.pitcher_metrics import PitcherFrameMetrics, PitcherPitchMetrics
 from pitching.domain.entities.pose import PoseFrame
+from pitching.domain.entities.pose_role import PoseRole, RoleAssignedPoseFrame
 from pitching.domain.entities.strike_zone import StrikeZone, StrikeZoneSeries
 from pitching.domain.entities.track import Track, TrackPoint
 from pitching.infra.ml.diff_detector import FrameDiffDetector
 from pitching.infra.ml.null_pose_estimator import NullPoseEstimator
-from pitching.infra.ml.yolov8_pose_estimator import UltralyticsYoloPoseEstimator
 from pitching.infra.ml.tracker import NearestNeighborTracker
 from pitching.infra.ml.yolo_detector import UltralyticsYoloDetector
+from pitching.infra.ml.yolov8_pose_estimator import UltralyticsYoloPoseEstimator
 from pitching.infra.storage.checkpoint import JsonCheckpointStore
 from pitching.infra.video.reader import VideoReader
 from pitching.pipeline.context import PipelineArtifacts, PipelineContext
 from pitching.pipeline.runner import PipelineRunner
+from pitching.pipeline.stages.batter_analysis_stage import BatterAnalysisStage
 from pitching.pipeline.stages.frame_diff_stage import FrameDiffStage
 from pitching.pipeline.stages.fusion_stage import FusionStage
 from pitching.pipeline.stages.pitch_analysis_stage import PitchAnalysisStage
 from pitching.pipeline.stages.pose_estimation_stage import PoseEstimationStage
+from pitching.pipeline.stages.pose_role_assignment_stage import PoseRoleAssignmentStage
+from pitching.pipeline.stages.pitcher_analysis_stage import PitcherAnalysisStage
 from pitching.pipeline.stages.release_detection_stage import ReleaseDetectionStage
 from pitching.pipeline.stages.rendering_stage import RenderingStage
 from pitching.pipeline.stages.strike_zone_stage import StrikeZoneStage
@@ -47,7 +53,12 @@ ARTIFACT_REGISTRY: dict = {
     "PipelineArtifacts": PipelineArtifacts,
     "Pitch": Pitch,
     "PitchTrajectoryPoint": PitchTrajectoryPoint,
+    "BatterSwingMetrics": BatterSwingMetrics,
+    "PitcherFrameMetrics": PitcherFrameMetrics,
+    "PitcherPitchMetrics": PitcherPitchMetrics,
     "PoseFrame": PoseFrame,
+    "PoseRole": PoseRole,
+    "RoleAssignedPoseFrame": RoleAssignedPoseFrame,
     "ReleaseEvent": ReleaseEvent,
     "StrikeZone": StrikeZone,
     "StrikeZoneSeries": StrikeZoneSeries,
@@ -86,10 +97,21 @@ def build_stages(cfg: PipelineConfig) -> list:
         YoloDetectStage(yolo_detector),
         FusionStage(cfg.fusion, cfg.frame_diff, cfg.yolo.min_confidence),
         PoseEstimationStage(pose_estimator),
+        PoseRoleAssignmentStage(
+            min_keypoint_confidence=cfg.pose.min_keypoint_confidence,
+        ),
         TrackingStage(tracker),
         StrikeZoneStage(cfg.strike_zone.width_px, cfg.strike_zone.fixed_center_x),
         ReleaseDetectionStage(),
         PitchAnalysisStage(),
+        PitcherAnalysisStage(
+            throwing_hand=cfg.pose.throwing_hand,
+            min_keypoint_confidence=cfg.pose.min_keypoint_confidence,
+        ),
+        BatterAnalysisStage(
+            batting_hand=cfg.pose.batting_hand,
+            min_keypoint_confidence=cfg.pose.min_keypoint_confidence,
+        ),
         RenderingStage(cfg.rendering),
     ]
 

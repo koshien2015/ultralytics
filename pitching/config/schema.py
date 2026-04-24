@@ -51,6 +51,8 @@ class RenderingConfig(BaseModel):
 class PoseConfig(BaseModel):
     model_path: str = "yolov8m-pose.pt"
     min_keypoint_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
+    throwing_hand: str = "right"   # "right" or "left"
+    batting_hand: str = "right"    # "right" or "left"
 
 
 class PipelineConfig(BaseModel):

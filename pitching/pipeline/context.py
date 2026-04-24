@@ -5,9 +5,12 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from pitching.config.schema import PipelineConfig
+from pitching.domain.entities.batter_metrics import BatterSwingMetrics
 from pitching.domain.entities.detection import DiffDetection, FusedDetection, YoloDetection
 from pitching.domain.entities.pitch import Pitch, ReleaseEvent
+from pitching.domain.entities.pitcher_metrics import PitcherPitchMetrics
 from pitching.domain.entities.pose import PoseFrame
+from pitching.domain.entities.pose_role import RoleAssignedPoseFrame
 from pitching.domain.entities.strike_zone import StrikeZoneSeries
 from pitching.domain.entities.track import Track
 
@@ -18,10 +21,13 @@ class PipelineArtifacts:
     diff_detections: Tuple[DiffDetection, ...] = ()
     fused_detections: Tuple[FusedDetection, ...] = ()
     pose_frames: Tuple[PoseFrame, ...] = ()
+    role_assigned_pose_frames: Tuple[RoleAssignedPoseFrame, ...] = ()
     tracks: Tuple[Track, ...] = ()
     strike_zone_series: Optional[StrikeZoneSeries] = None
     release_events: Tuple[ReleaseEvent, ...] = ()
     pitches: Tuple[Pitch, ...] = ()
+    pitcher_metrics: Tuple[PitcherPitchMetrics, ...] = ()
+    batter_metrics: Tuple[BatterSwingMetrics, ...] = ()
 
 
 @dataclass(frozen=True)
