@@ -1,0 +1,19 @@
+path: /shared
+train: ./train
+val: ./valid
+test: ./test
+
+nc: 11
+names:
+  0: cap
+  1: pitcher_motion
+  2: batter_stance
+  3: umpire
+  4: catcher
+  5: pitcher_release
+  6: batter_swing
+  7: catcher_stance
+  8: catcher_catch
+  9: catcher_throw
+  10: catcher_miss
+

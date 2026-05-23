@@ -149,7 +149,6 @@ wandb/
 # Neural Network weights -----------------------------------------------------------------------------------------------
 weights/
 *.weights
-*.pt
 *.ts
 *.pb
 *.onnx
@@ -174,3 +173,12 @@ pnnx*
 
 # calibration image
 calibration_*.npy
+*.jpg
+*.txt
+shared/datasets/coco8/
+shared/datasets/exp10-new/
+*.cache
+*.mp4
+*.mkv
+shared/exp10-new/
+*.lwi
