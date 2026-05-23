@@ -1,0 +1,29 @@
+[project]
+name = "pitching"
+version = "0.1.0"
+description = "キャップ野球 投球分析パイプライン"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "ultralytics>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0"]
+
+[build-system]
+requires = ["setuptools>=70.0.0"]
+build-backend = "setuptools.build_meta"
+
+# pyproject.toml は pitching/ の中に置かれているが、
+# `from pitching.xxx import yyy` が使えるよう親ディレクトリ (ultralytics/) を
+# パッケージルートとして参照する
+[tool.setuptools.package-dir]
+"" = ".."
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["pitching*"]
