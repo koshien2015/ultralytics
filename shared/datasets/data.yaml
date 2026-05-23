@@ -1,0 +1,16 @@
+path: /data
+train: ./train/images
+val: ./valid/images
+test: ./test/images
+
+nc: 7
+names:
+  0: cap
+  1: pitcher_motion
+  2: batter_stance
+  3: umpire
+  4: catcher
+  5: pitcher_release
+  6: batter_swing
+
+
