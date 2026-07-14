@@ -101,6 +101,10 @@ model = YOLO(model_path)
 # 5: pitcher_release
 target_classes = [0]  # 検出したいクラスIDをここに指定
 
+# 推論設定
+INFERENCE_IMGSZ = 1920  # デフォルト640では1080p上のキャップが3px程度に潰れて検出限界を下回る
+INFERENCE_CONF = 0.15  # 低めに設定して取りこぼしを減らす。誤検出は軌跡フィットの後処理で除去する
+
 # 軌跡描画設定
 DRAW_TRAJECTORY = True  # 軌跡を描画するか
 MAX_TRAJECTORY_LENGTH = 60  # 軌跡の最大長さ（フレーム数）
@@ -165,7 +169,7 @@ while True:
         break
 
     # 強調フレームで検出実行
-    results = model(frame_enhance, verbose=False)
+    results = model(frame_enhance, imgsz=INFERENCE_IMGSZ, conf=INFERENCE_CONF, verbose=False)
 
     # ピッチング解析
     if analyzer:
@@ -314,3 +318,30 @@ if analyzer:
     json_output_path = os.path.join(video_dir, f"{base_name}_trajectory.json")
     analyzer.export_to_json(json_output_path, video_file=original_video)
     print(f"\nTrajectory data saved to: {json_output_path}")
+
+    # 軌跡フィット後処理: 誤検出除去・欠損補間・コース/球速推定
+    import json
+    from trajectory_fitter import analyze_pitch
+
+    with open(json_output_path, encoding='utf-8') as f:
+        raw_data = json.load(f)
+
+    pitch_analyses = []
+    for pitch in raw_data['pitches']:
+        try:
+            analysis = analyze_pitch(pitch['trajectory'], fps)
+            pitch_analyses.append({'pitch_id': pitch['pitch_id'], **analysis})
+            print(f"  Pitch {pitch['pitch_id']}: course={analysis['course_zone']} "
+                  f"speed={analysis['speed_kmh']:.1f}km/h "
+                  f"(検出{analysis['num_detected']}点 → 採用{analysis['num_inliers']}点 "
+                  f"/ 誤検出除去{analysis['num_outliers']}点)")
+        except ValueError as e:
+            print(f"  Pitch {pitch['pitch_id']}: 解析不能 ({e})")
+
+    analysis_output_path = os.path.join(video_dir, f"{base_name}_analysis.json")
+    with open(analysis_output_path, 'w', encoding='utf-8') as f:
+        json.dump(
+            {'metadata': raw_data['metadata'], 'pitches': pitch_analyses},
+            f, indent=2, ensure_ascii=False,
+        )
+    print(f"Pitch analysis saved to: {analysis_output_path}")
