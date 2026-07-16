@@ -42,6 +42,11 @@ def parse_args():
         help="バッチサイズ。-1でVRAMに合わせて自動決定",
     )
     parser.add_argument("--name", default=None, help="実験名（runs/detect/配下）")
+    parser.add_argument(
+        "--project", default=None,
+        help="run出力先の親ディレクトリ。Colab等の揮発環境ではDrive上のパスを"
+             "指定すると切断時も成果物が残り、resume=True での再開も可能になる",
+    )
     return parser.parse_args()
 
 
@@ -58,6 +63,7 @@ def main():
         imgsz=args.imgsz,
         batch=args.batch,
         name=args.name,
+        project=args.project,
         # --- 小物体向けの拡張設定 ---
         # モザイクは小物体をさらに縮小して有害なことがあるため縮小率を抑える
         scale=0.3,
