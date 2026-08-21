@@ -4,6 +4,7 @@ import os
 import numpy as np
 from ultralytics import YOLO
 import tennis
+import prefilter
 from pitching_analysis import PitchingAnalyzer
 
 
@@ -101,6 +102,14 @@ model = YOLO(model_path)
 # 5: pitcher_release
 target_classes = [0]  # 検出したいクラスIDをここに指定
 
+# 前段フィルタ設定（推論するフレームを絞って高速化する。詳細は prefilter.py）
+ENABLE_PREFILTER = True   # False で全フレーム推論（従来の挙動）
+PREFILTER_ROI = None      # 投手ROI（相対座標 x, y, w, h）。None で全画面
+PREFILTER_SEARCH_STRIDE = 5   # 未検出のあいだ何フレームに1回推論するか。1で間引きなし
+PREFILTER_DENSE_FRAMES = 30   # キャップ検出後、連続で推論するフレーム数
+PREFILTER_THRESHOLD_FACTOR = 2.0    # 活動量の閾値 = 中央値 × この係数
+PREFILTER_MIN_EVENT_INTERVAL = 1.5  # これより短い間隔のイベントは統合する
+
 # 推論設定
 INFERENCE_IMGSZ = 1920  # デフォルト640では1080p上のキャップが3px程度に潰れて検出限界を下回る
 INFERENCE_CONF = 0.15  # 低めに設定して取りこぼしを減らす。誤検出は軌跡フィットの後処理で除去する
@@ -155,6 +164,22 @@ out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 if analyzer:
     analyzer.set_fps(fps)
 
+# 前段フィルタ: 事前走査で投球区間を求め、推論するフレームを絞る
+prefilter_config = prefilter.PrefilterConfig(
+    roi=PREFILTER_ROI,
+    threshold_factor=PREFILTER_THRESHOLD_FACTOR,
+    min_event_interval_sec=PREFILTER_MIN_EVENT_INTERVAL,
+    search_stride=PREFILTER_SEARCH_STRIDE,
+    dense_frames=PREFILTER_DENSE_FRAMES,
+)
+if ENABLE_PREFILTER:
+    print("\nPre-scanning for pitch windows...")
+    gate, windows = prefilter.build_gate(detection_video, prefilter_config)
+    covered = prefilter.windows_frame_count(windows)
+    print(f"  {len(windows)} windows, {covered} frames to consider")
+else:
+    gate = prefilter.InferenceGate(None, prefilter_config)
+
 print(f"\nProcessing frames and detecting objects...")
 
 import time
@@ -168,8 +193,18 @@ while True:
     if not ret_enhance or not ret_original:
         break
 
-    # 強調フレームで検出実行
-    results = model(frame_enhance, imgsz=INFERENCE_IMGSZ, conf=INFERENCE_CONF, verbose=False)
+    # 強調フレームで検出実行（前段フィルタが不要と判断したフレームは飛ばす）
+    if gate.should_infer(frame_count):
+        results = model(frame_enhance, imgsz=INFERENCE_IMGSZ, conf=INFERENCE_CONF, verbose=False)
+        found = any(
+            int(box.cls[0]) in target_classes if target_classes else True
+            for result in results
+            for box in result.boxes
+        )
+        gate.note_detection(frame_count, found)
+    else:
+        # 空の結果を渡す。軌跡はフェードし、解析側も検出なしとして扱う
+        results = []
 
     # ピッチング解析
     if analyzer:
@@ -308,6 +343,7 @@ print(f"  Total frames: {frame_count}")
 print(f"  Video duration: {video_duration:.2f} seconds")
 print(f"  Processing time: {processing_time:.2f} seconds")
 print(f"  Processing speed: {processing_speed:.2f}x realtime")
+print(f"  Prefilter: {gate.summary}")
 if processing_speed < 1.0:
     print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
 else:
