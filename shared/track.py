@@ -243,9 +243,9 @@ while True:
 
             # バウンディングボックスとラベルを描画
             cv2.rectangle(frame_original, (x1, y1), (x2, y2), TRAJECTORY_COLOR, 1)
-            # label = f"{model.names[cls]} {conf:.2f}"
-            # cv2.putText(frame_original, label, (x1, y1-10),
-            #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            label = f"{model.names[cls]} {conf:.2f}"
+            cv2.putText(frame_original, label, (x1, y1-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     # 軌跡を更新（簡易的なマッチング）
     if DRAW_TRAJECTORY:
