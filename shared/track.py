@@ -6,6 +6,7 @@ from ultralytics import YOLO
 import tennis
 import prefilter
 from pitching_analysis import PitchingAnalyzer
+import pose
 
 
 def draw_neon_polyline(
@@ -127,6 +128,22 @@ NEON_CORE_THICKNESS = 3  # 中心線の太さ
 NEON_GLOW_BLUR = 25  # ぼかし量（奇数推奨）
 NEON_GLOW_INTENSITY = 0.8  # 光の強さ（0.0〜1.0）
 
+# 姿勢推定設定（YOLO Pose）
+ENABLE_POSE = False  # 骨格推定を有効にするか
+POSE_MODEL_PATH = "yolo11x-pose.pt"  # 公式Pose重み（検出モデルとは別）
+POSE_CONF = 0.5
+POSE_IMGSZ = 960  # 人物は大きいのでキャップ用の1920は不要
+POSE_MIN_KEYPOINT_SCORE = 0.5  # これ未満のキーポイントは描かない
+POSE_MIN_OVERLAP = 0.5  # 骨格と役割bboxの包含係数がこれ以上なら同一人物とみなす
+POSE_ROLES = ("pitcher",)  # 骨格を描く役割。("pitcher", "batter") で打者も
+# 姿勢推定窓を導出するROI（相対 x, y, w, h）。None だと全画面の活動量で窓を
+# 決めるため、打者・走者・観客の動きでも窓が立ち、投球していないフレームに
+# 骨格が描かれる。投手ROIの指定を強く推奨（どのフレームを処理するかを絞る
+# だけで、打者など他の人物の骨格が取れなくなるわけではない）。
+POSE_ROI = None
+POSE_PRE_MARGIN = 1.5  # ワインドアップを含めるため活動開始の何秒前から処理するか
+POSE_POST_MARGIN = 0.5  # キャップ飛翔用の後ろマージンは骨格には不要なので削る
+
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
 DRAW_STRIKE_ZONE = False  # ストライクゾーンを描画するか
@@ -144,6 +161,19 @@ if ENABLE_PITCHING_ANALYSIS:
     analyzer = PitchingAnalyzer(
         strike_zone_width_px=STRIKE_ZONE_WIDTH_PX,
         strike_zone_center_x=STRIKE_ZONE_CENTER_X
+    )
+
+# 姿勢推定の初期化
+estimator = None
+if ENABLE_POSE:
+    print("Initializing pose estimator...")
+    estimator = pose.PoseEstimator(
+        model_path=POSE_MODEL_PATH,
+        conf=POSE_CONF,
+        imgsz=POSE_IMGSZ,
+        min_keypoint_score=POSE_MIN_KEYPOINT_SCORE,
+        min_overlap=POSE_MIN_OVERLAP,
+        roles=POSE_ROLES,
     )
 
 # 強調動画と元動画を開く
@@ -172,13 +202,32 @@ prefilter_config = prefilter.PrefilterConfig(
     search_stride=PREFILTER_SEARCH_STRIDE,
     dense_frames=PREFILTER_DENSE_FRAMES,
 )
+# 姿勢推定は別の窓を使う。頭は残して（ワインドアップ）、後ろを削る。
+pose_config = pose.pose_prefilter_config(
+    prefilter_config,
+    roi=POSE_ROI,
+    pre_margin_sec=POSE_PRE_MARGIN,
+    post_margin_sec=POSE_POST_MARGIN,
+)
+
 if ENABLE_PREFILTER:
     print("\nPre-scanning for pitch windows...")
-    gate, windows = prefilter.build_gate(detection_video, prefilter_config)
+    # scan_activity が全編走査の重い処理。detect_windows は profile の純関数なので
+    # 走査は1回だけ流し、窓の切り出しをキャップ用と姿勢用で2回行う。
+    profile = prefilter.scan_activity(detection_video, prefilter_config)
+    windows = prefilter.detect_windows(profile, prefilter_config)
+    gate = prefilter.InferenceGate(windows, prefilter_config)
     covered = prefilter.windows_frame_count(windows)
     print(f"  {len(windows)} windows, {covered} frames to consider")
+
+    pose_windows = prefilter.detect_windows(profile, pose_config)
+    pose_gate = prefilter.InferenceGate(pose_windows, pose_config)
+    if ENABLE_POSE:
+        pose_covered = prefilter.windows_frame_count(pose_windows)
+        print(f"  pose: {len(pose_windows)} windows, {pose_covered} frames")
 else:
     gate = prefilter.InferenceGate(None, prefilter_config)
+    pose_gate = prefilter.InferenceGate(None, pose_config)
 
 print(f"\nProcessing frames and detecting objects...")
 
@@ -186,6 +235,8 @@ import time
 start_time = time.time()
 
 frame_count = 0
+pose_in_window = False
+pose_pending_reset = False
 while True:
     ret_enhance, frame_enhance = cap_enhance.read()
     ret_original, frame_original = cap_original.read()
@@ -206,6 +257,23 @@ while True:
         # 空の結果を渡す。軌跡はフェードし、解析側も検出なしとして扱う
         results = []
 
+    # 姿勢推定（描画前の元フレームに対して実行する。強調フレームは
+    # キャップ用の加工なので人物の姿勢推定には使わない）
+    pose_result = None
+    if estimator:
+        if pose_gate.should_infer(frame_count):
+            # 窓に入ったとき、および前フレームでリリースを検出したときに
+            # トラッカーIDを捨てる。窓の境界だけでは足りない: 投球間隔が
+            # 短いと detect_windows が隣接する窓をマージしてしまい、
+            # 窓の外になるフレームが生じないため。
+            if not pose_in_window or pose_pending_reset:
+                estimator.reset_tracker()
+                pose_in_window = True
+                pose_pending_reset = False
+            pose_result = estimator.update(frame_original, results)
+        else:
+            pose_in_window = False
+
     # ピッチング解析
     if analyzer:
         # 解析実行
@@ -214,12 +282,18 @@ while True:
         # リリース検出時にログ出力
         if analysis_result['is_release']:
             print(f"🎯 Release detected at frame {frame_count}")
+            # 次の投球のためにトラッカーIDを引き継がない（次フレームで反映）
+            pose_pending_reset = True
 
         # 描画
         frame_original = analyzer.draw(frame_original, frame_count,
                                       ball_3d=analysis_result['ball_3d'],
                                       draw_strike_zone=DRAW_STRIKE_ZONE,
                                       draw_info=True)
+
+    # 骨格を描画（バウンディングボックス・軌跡より下のレイヤーに置く）
+    if estimator and pose_result:
+        frame_original = estimator.draw(frame_original, pose_result)
 
     # 現在フレームの検出物体の中心座標を取得
     current_centers = []
@@ -344,6 +418,8 @@ print(f"  Video duration: {video_duration:.2f} seconds")
 print(f"  Processing time: {processing_time:.2f} seconds")
 print(f"  Processing speed: {processing_speed:.2f}x realtime")
 print(f"  Prefilter: {gate.summary}")
+if estimator:
+    print(f"  Pose: {pose_gate.summary}")
 if processing_speed < 1.0:
     print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
 else:
