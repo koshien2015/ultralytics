@@ -1,0 +1,35 @@
+# 良かった投球の設定例
+pitch_id: good_001
+video_path: input/good.mp4
+throwing_hand: right
+# 画像上で打者がどちら側にいるか。前腕角度の符号（打者方向に対して上向き何度）に必要。
+batter_direction: left
+fps: 60
+start_frame: 100
+end_frame: 180
+
+events:
+  # 自動検出は誤りやすいので、まず人間が指定する
+  stride_foot_contact_frame: null
+  release_frame: 152
+
+result:
+  label: good
+  description: "縦回転58km/h"
+
+# 以下は省略可能（既定値で動く）
+preprocessing:
+  confidence_threshold: 0.5
+  max_gap_frames: 3
+  smoothing_window: 9
+  smoothing_polyorder: 2
+
+metrics:
+  normalization: shoulder_width
+  horizontal_tolerance_deg: 15.0
+
+extraction:
+  pose_model_path: yolo11x-pose.pt
+  # 11クラス検出モデルを指定すると、役割bboxで投手を特定できる（推奨）
+  detection_model_path: null
+  imgsz: 960
