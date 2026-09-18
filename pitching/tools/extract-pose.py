@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """動画1本から YOLO Pose のキーポイント列（pose.json）を書き出す。
 
-    python extract-pose.py input/a.mov -o a.pose.json --start 100 --end 180
+    python extract-pose.py                       # 下の「設定」に従う
+    python extract-pose.py input/a.mov -o a_pose.json --start 100 --end 180
 
 Docker の推論環境で単体で走らせるための台本。**この1ファイルと shared/pose.py
 以外に何も要らない**（pydantic も matplotlib も import しない）ので、
@@ -25,6 +26,21 @@ import sys
 from pathlib import Path
 
 SCHEMA_VERSION = 1
+
+# ============================ 設定 ============================
+# 毎回コマンドを打たずに済むよう、ここを書き換えて引数なしで実行してもよい
+# （track.py と同じ流儀）。コマンドラインで指定した場合はそちらが優先される。
+VIDEO = None                       # 入力動画。例: "/shared/input/a.mov"
+OUTPUT = None                      # 出力先。None なら {動画名}_pose.json
+START_FRAME = 0                    # 解析区間の開始フレーム
+END_FRAME = None                   # 終了フレーム。None なら最後まで
+FPS = None                         # None なら動画から取る
+POSE_MODEL = "yolo11x-pose.pt"     # Pose 重み
+DETECTION_MODEL = None             # 11クラス検出モデル。投手の特定に使う（推奨）
+IMGSZ = 960
+CONF = 0.5
+MIN_KEYPOINT_SCORE = 0.3
+# ==============================================================
 
 
 def load_pose_module(shared_dir: Path):
@@ -162,24 +178,35 @@ def main(argv: list[str] | None = None) -> int:
         "PITCHING_SHARED_DIR", str(Path(__file__).resolve().parents[2] / "shared")
     )
     parser = argparse.ArgumentParser(description="動画からキーポイント列を書き出す")
-    parser.add_argument("video", help="入力動画")
-    parser.add_argument("-o", "--output", required=True, help="出力する pose.json")
-    parser.add_argument("--start", type=int, default=0, help="解析区間の開始フレーム")
-    parser.add_argument("--end", type=int, help="解析区間の終了フレーム（省略で最後まで）")
-    parser.add_argument("--fps", type=float, help="fps（省略時は動画から取る）")
+    parser.add_argument("video", nargs="?", default=VIDEO, help="入力動画")
+    parser.add_argument("-o", "--output", default=OUTPUT, help="出力する pose.json")
+    parser.add_argument("--start", type=int, default=START_FRAME, help="解析区間の開始フレーム")
+    parser.add_argument("--end", type=int, default=END_FRAME,
+                        help="解析区間の終了フレーム（省略で最後まで）")
+    parser.add_argument("--fps", type=float, default=FPS, help="fps（省略時は動画から取る）")
     parser.add_argument("--pitch-id", help="投球名（既定は動画のファイル名）")
-    parser.add_argument("--pose-model", default="yolo11x-pose.pt", help="Pose 重み")
+    parser.add_argument("--pose-model", default=POSE_MODEL, help="Pose 重み")
     parser.add_argument(
-        "--detection-model", help="11クラス検出モデル。投手の特定に使う（推奨）"
+        "--detection-model", default=DETECTION_MODEL,
+        help="11クラス検出モデル。投手の特定に使う（推奨）",
     )
-    parser.add_argument("--imgsz", type=int, default=960)
-    parser.add_argument("--conf", type=float, default=0.5)
-    parser.add_argument("--min-keypoint-score", type=float, default=0.3)
+    parser.add_argument("--imgsz", type=int, default=IMGSZ)
+    parser.add_argument("--conf", type=float, default=CONF)
+    parser.add_argument("--min-keypoint-score", type=float, default=MIN_KEYPOINT_SCORE)
     parser.add_argument("--shared-dir", default=default_shared, help="shared/pose.py の場所")
     parser.add_argument(
         "--progress", type=int, default=50, help="何フレームごとに進捗を出すか（0で出さない）"
     )
     args = parser.parse_args(argv)
+
+    if not args.video:
+        raise SystemExit(
+            "入力動画が指定されていません。"
+            "引数で渡すか、このファイル先頭の VIDEO を設定してください"
+        )
+    # 出力先を省いたら動画の隣に {動画名}_pose.json を作る
+    if not args.output:
+        args.output = str(Path(args.video).with_name(f"{Path(args.video).stem}_pose.json"))
 
     payload = extract(args)
     output = Path(args.output)

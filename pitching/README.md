@@ -35,6 +35,7 @@ pitching/
   pipeline.py            run（抽出→解析→比較→ビューア）の段取り
   cli.py                 CLI
   tools/extract-pose.py  推論環境用の抽出台本（track.py を使わない場合）。単体で完結する
+  tools/run-analysis.py  解析〜ビューアを引数なしで実行（先頭の設定を書き換える）
   tools/make-viewer.py   ビューア生成スクリプト（単体で実行できる）
   examples/              設定例と、動画なしで試すための合成データ生成
   tests/                 合成座標による単体テスト（実動画・GPU 不要）
@@ -45,6 +46,30 @@ pitching/
 `sys.path` を足して遅延 import する。**`shared/` 側は変更していない。**
 
 ## 実行方法
+
+### コマンドを打ちたくない場合
+
+`tools/*.py` は先頭に設定ブロックがあり、**引数なしで実行できる**（`track.py` と同じ流儀）。
+パスやフレーム番号をファイルに書いておけば、あとは実行するだけ。
+
+```python
+# pitching/tools/run-analysis.py の先頭
+PITCHES = [
+    {"pose": "../../shared/input/a_pose.json", "release": 152, "contact": 140, "label": "1球目"},
+    {"pose": "../../shared/input/b_pose.json", "release": 160, "contact": 148, "label": "2球目"},
+]
+OUTPUT_DIR = "../../output/compare"
+THROWING_HAND = "right"
+BATTER_DIRECTION = "right"
+```
+
+```bash
+python pitching/tools/run-analysis.py     # 解析 → 比較 → ビューアまで
+```
+
+同じ流儀で `tools/extract-pose.py`（`VIDEO` / `START_FRAME` / `DETECTION_MODEL` …）と
+`tools/make-viewer.py`（`PITCHES` / `OUTPUT`）も引数なしで動く。
+引数を渡した場合はそちらが優先される。
 
 ### いちばん短い手順
 
