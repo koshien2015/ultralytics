@@ -21,8 +21,8 @@ TEMPLATE = r'''<!doctype html>
     --muted: #7C949E;
     --a:     #BFE9F2;  /* 投球A の骨格 */
     --b:     #FFB23E;  /* 投球B の骨格 */
-    --a-vec: #6EE7A0;  /* 投球A のベクトル */
-    --b-vec: #C77DFF;  /* 投球B のベクトル */
+    --a-vec: #FF3B30;  /* 投球A のベクトル（骨格は水色なので赤） */
+    --b-vec: #00E676;  /* 投球B のベクトル（骨格は橙なので緑） */
     --warn:  #FF6B6B;
   }
   * { box-sizing: border-box; }
@@ -160,8 +160,9 @@ const DATA = __DATA__;
 const PITCHES = DATA.pitches;
 const EDGES = DATA.edges;
 const COLORS = ['#BFE9F2', '#FFB23E'];
-// ベクトルは骨格と別の色にする。骨格と同じ色だと、線なのか矢印なのか見分けにくい。
-const VECTOR_COLORS = ['#6EE7A0', '#C77DFF'];
+// ベクトルは骨格と別の色にする。骨格と同じ系統だと、線なのか矢印なのか見分けにくい。
+// 骨格が水色の投球Aには赤、骨格が橙の投球Bには緑を当て、色相を最も離す。
+const VECTOR_COLORS = ['#FF3B30', '#00E676'];
 const EVENT_LABELS = {
   foot_contact: '足接地', max_elbow_flexion: '最大屈曲',
   extension_start: '伸展開始', release: 'リリース',
@@ -454,11 +455,11 @@ function drawArrow(context, from, to, color, clipped = false) {
   const length = Math.hypot(x2 - x1, y2 - y1);
   if (length < 2) return;
   const angle = Math.atan2(y2 - y1, x2 - x1);
-  const head = Math.min(10, length * 0.35);
+  const head = Math.min(14, length * 0.4);
 
   context.strokeStyle = color;
   context.fillStyle = color;
-  context.lineWidth = 2;
+  context.lineWidth = 3;
   context.beginPath();
   context.moveTo(x1, y1);
   context.lineTo(x2, y2);

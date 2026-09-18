@@ -149,7 +149,7 @@ def test_vectors_use_their_own_colors():
     """ベクトルは骨格と別の色で描く（線か矢印か見分けるため）。"""
     from pitching.visualization.viewer_template import TEMPLATE
 
-    assert "const VECTOR_COLORS = ['#6EE7A0', '#C77DFF'];" in TEMPLATE
+    assert "const VECTOR_COLORS = ['#FF3B30', '#00E676'];" in TEMPLATE
     assert "drawVectors(context, project, pitch, cursor, VECTOR_COLORS[index]);" in TEMPLATE
 
 
