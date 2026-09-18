@@ -150,6 +150,9 @@ POSE_POST_MARGIN = 0.5  # キャップ飛翔用の後ろマージンは骨格に
 #   python -m pitching run --output out/ --pose 動画名_pose.json --release <フレーム>
 POSE_EXPORT = True
 POSE_EXPORT_ROLE = "pitcher"  # どの役割のキーポイントを書き出すか
+# 途中経過を書き出す間隔（記録フレーム数）。最後にまとめて書くだけだと、
+# 長い動画で中断・強制終了したときに何も残らない。0 で無効。
+POSE_EXPORT_FLUSH_FRAMES = 300
 
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
@@ -213,7 +216,8 @@ if estimator and POSE_EXPORT:
         # 落とすかどうかは解析側で決める（書き出す側で捨てると後から変えられない）。
         min_score=POSE_MIN_KEYPOINT_SCORE,
     )
-    print(f"Pose keypoints will be saved to: {os.path.join(video_dir, f'{base_name}_pose.json')}")
+    pose_json_path = os.path.abspath(os.path.join(video_dir, f"{base_name}_pose.json"))
+    print(f"Pose keypoints will be saved to: {pose_json_path}")
 
 # 前段フィルタ: 事前走査で投球区間を求め、推論するフレームを絞る
 prefilter_config = prefilter.PrefilterConfig(
@@ -243,12 +247,14 @@ if ENABLE_PREFILTER:
 
     pose_windows = prefilter.detect_windows(profile, pose_config)
     pose_gate = prefilter.InferenceGate(pose_windows, pose_config)
+    pose_window_count = len(pose_windows)
     if ENABLE_POSE:
         pose_covered = prefilter.windows_frame_count(pose_windows)
         print(f"  pose: {len(pose_windows)} windows, {pose_covered} frames")
 else:
     gate = prefilter.InferenceGate(None, prefilter_config)
     pose_gate = prefilter.InferenceGate(None, pose_config)
+    pose_window_count = None  # 前段フィルタ無効。全フレームが対象
 
 print(f"\nProcessing frames and detecting objects...")
 
@@ -294,6 +300,12 @@ while True:
             pose_result = estimator.update(frame_original, results)
             if recorder:
                 recorder.record(frame_count, pose_result)
+                # 途中で落ちても、そこまでのキーポイントは残す
+                if (
+                    POSE_EXPORT_FLUSH_FRAMES
+                    and len(recorder) % POSE_EXPORT_FLUSH_FRAMES == 0
+                ):
+                    recorder.save(pose_json_path)
         else:
             pose_in_window = False
 
@@ -446,17 +458,27 @@ if estimator:
 
 # キーポイントの書き出し（投球フォーム解析 pitching/ 用）
 if recorder and len(recorder):
-    pose_json_path = os.path.join(video_dir, f"{base_name}_pose.json")
-    recorder.save(pose_json_path)
-    print(f"\nPose keypoints saved to: {pose_json_path}")
-    print(f"  {len(recorder)} frames, selection={list(recorder.selection_modes)}")
-    for start, end in recorder.frame_ranges():
-        print(f"  frames {start}-{end}")
-    print("  手元で解析するには:")
-    print(f"    python -m pitching run --output out/ --pose {base_name}_pose.json \\")
-    print("      --release <リリースのフレーム番号> --contact <足接地のフレーム番号>")
+    try:
+        recorder.save(pose_json_path)
+    except (OSError, ValueError) as error:
+        # 黙って消えると「出ないんですけど」になるので、必ず理由を出す
+        print(f"\n[ERROR] Pose keypoints を書き出せませんでした: {pose_json_path}: {error}")
+    else:
+        print(f"\nPose keypoints saved to: {pose_json_path}")
+        print(f"  {len(recorder)} frames, selection={list(recorder.selection_modes)}")
+        for start, end in recorder.frame_ranges():
+            print(f"  frames {start}-{end}")
+        print("  手元で解析するには:")
+        print(f"    python -m pitching run --output out/ --pose {base_name}_pose.json \\")
+        print("      --release <リリースのフレーム番号> --contact <足接地のフレーム番号>")
 elif recorder:
-    print("\nPose keypoints: 記録されたフレームがありません（投球区間が検出されていない）")
+    print(f"\n[WARN] Pose keypoints: 記録されたフレームが0でした（{pose_json_path} は作られません）")
+    print(f"  pose gate: {pose_gate.summary}")
+    if pose_window_count == 0:
+        print("  姿勢推定の窓が1つも立っていません。"
+              "POSE_ROI を投手に合わせるか、ENABLE_PREFILTER = False で全フレーム処理してください")
+    elif pose_window_count is not None:
+        print(f"  姿勢推定の窓: {pose_window_count} 個（窓はあるのに推論されていない）")
 if processing_speed < 1.0:
     print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
 else:
