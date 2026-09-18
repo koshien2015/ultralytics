@@ -34,8 +34,17 @@
 | `prefilter.py` | 推論フレームの事前絞り込み（投球区間の検出＋間引き） |
 | `track.py` | 推論＋軌跡描画＋解析のエントリポイント |
 | `pitching_analysis.py` | ストライクゾーン推定・リリース検出・座標正規化 |
+| `pose.py` | YOLO Pose による骨格推定と、検出の役割bboxを使った人物（投手など）の割り当て |
 | `trajectory_fitter.py` | RANSAC軌跡フィット・誤検出除去・欠損補間・コース/球速推定 |
 | `tests/test_trajectory_fitter.py` | trajectory_fitter のユニットテスト（27件） |
+
+投球フォームの解析（関節角度・リリース時の肘の伸び・2球の比較・棒人間ビューア）は
+別パッケージ `../pitching/` にある。手順は `../pitching/README.md`。
+
+`track.py` の `ENABLE_POSE` は骨格を**動画に描くだけ**で、キーポイントは保存しない。
+フォーム解析にはキーポイントの時系列が要るので、`pitching` 側が `pose.py` を使って
+解析区間を1フレームずつ推論し直す（prefilter の間引きは使わない。間引くと
+「推論していないフレーム」と「信頼度が低いフレーム」を区別できなくなるため）。
 
 ## 実行環境（GPU搭載PCのローカル実行が前提）
 
