@@ -67,6 +67,14 @@ class PoseRecorder:
     def __len__(self) -> int:
         return len(self._frames)
 
+    def __bool__(self) -> bool:
+        """記録が0件でも「recorder はある」と扱う。
+
+        __len__ だけだと空の recorder が falsy になり、`if recorder:` が
+        一度も通らないまま1フレームも記録されない（実際にそれで嵌った）。
+        """
+        return True
+
     @property
     def selection_modes(self) -> tuple[str, ...]:
         return tuple(sorted(self._modes))

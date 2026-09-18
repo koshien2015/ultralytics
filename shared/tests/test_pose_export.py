@@ -34,6 +34,19 @@ def result_with(person, role="pitcher"):
     return {"persons": [person], "roles": {person.track_id: role}}
 
 
+class TestTruthiness:
+    def test_empty_recorder_is_truthy(self):
+        """記録0件でも `if recorder:` が通ること。
+
+        __len__ だけを定義すると空の recorder が falsy になり、
+        ガードを一度も通らないまま1フレームも記録されなくなる。
+        """
+        recorder = make_recorder()
+
+        assert len(recorder) == 0
+        assert bool(recorder) is True
+
+
 class TestRecord:
     def test_records_one_frame_per_call(self):
         recorder = make_recorder()

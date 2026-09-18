@@ -62,6 +62,14 @@ class TestPoseExport:
         """溜める処理と書き出す処理の両方が呼ばれていること。"""
         assert {"record", "save"} <= called_attributes("recorder")
 
+    def test_recorder_is_guarded_by_identity_not_truthiness(self):
+        """`if recorder:` だと、記録0件のあいだ recorder が falsy で素通りする。"""
+        source = TRACK_PATH.read_text(encoding="utf-8")
+
+        assert "if recorder:" not in source
+        assert "elif recorder:" not in source
+        assert "recorder is not None" in source
+
     def test_flush_interval_fits_a_short_clip(self):
         """切り出した数十フレームのクリップでも、途中経過が1回は書かれること。"""
         assert 0 < constants()["POSE_EXPORT_FLUSH_FRAMES"] <= 90

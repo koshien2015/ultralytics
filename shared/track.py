@@ -304,7 +304,7 @@ while True:
                 pose_in_window = True
                 pose_pending_reset = False
             pose_result = estimator.update(frame_original, results)
-            if recorder:
+            if recorder is not None:
                 recorder.record(frame_count, pose_result)
                 # 途中で落ちても、そこまでのキーポイントは残す
                 if (
@@ -463,7 +463,7 @@ if estimator:
     print(f"  Pose: {pose_gate.summary}")
 
 # キーポイントの書き出し（投球フォーム解析 pitching/ 用）
-if recorder and len(recorder):
+if recorder is not None and len(recorder):
     try:
         recorder.save(pose_json_path)
     except (OSError, ValueError) as error:
@@ -477,7 +477,7 @@ if recorder and len(recorder):
         print("  手元で解析するには:")
         print(f"    python -m pitching run --output out/ --pose {base_name}_pose.json \\")
         print("      --release <リリースのフレーム番号> --contact <足接地のフレーム番号>")
-elif recorder:
+elif recorder is not None:
     print(f"\n[WARN] Pose keypoints: 記録されたフレームが0でした（{pose_json_path} は作られません）")
     print(f"  pose gate: {pose_gate.summary}")
     if pose_window_count == 0:
