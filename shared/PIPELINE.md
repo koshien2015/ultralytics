@@ -42,8 +42,8 @@
 投球フォームの解析（関節角度・リリース時の肘の伸び・2球の比較・棒人間ビューア）は
 別パッケージ `../pitching/` にある。手順は `../pitching/README.md`。
 
-`track.py` で `ENABLE_POSE = True` と `POSE_EXPORT = True` にすると、骨格を描くのに加えて
-`{動画名}_pose.json`（キーポイント時系列）を書き出す。これを手元に持ち帰れば、
+`track.py` で `ENABLE_POSE = True` にすると、骨格を描くのに加えて
+`{動画名}_pose.json`（キーポイント時系列）を書き出す（`POSE_EXPORT` が既定で True）。これを手元に持ち帰れば、
 GPU 無しで解析・比較・ビューアまで作れる。
 
 ```bash

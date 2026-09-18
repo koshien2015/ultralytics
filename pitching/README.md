@@ -78,14 +78,16 @@ python -m pitching run --output output/compare \
 YOLO Pose は GPU のあるコンテナ、解析とビューアは手元、という分け方ができる。
 やり取りするのは **pose.json 1ファイルだけ**。
 
-**すでに `track.py` を回しているなら**、その先頭のフラグを2つ立てるだけでよい。
+**すでに `track.py` を回しているなら**、その先頭のフラグを1つ立てるだけでよい。
 キャップ検出と同じ1コマンドのまま、`{動画名}_pose.json` が増える。
 
 ```python
 # shared/track.py
-ENABLE_POSE = True
-POSE_EXPORT = True     # ← これで {動画名}_pose.json が出る
+ENABLE_POSE = True     # ← これだけ。POSE_EXPORT は既定で True
 ```
+
+書き出し先は起動時にも表示される（`Pose keypoints will be saved to: ...`）。
+骨格を描くだけでファイルが要らなければ `POSE_EXPORT = False`。
 
 ```bash
 # 推論環境（いつもどおり）

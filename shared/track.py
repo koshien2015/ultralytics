@@ -145,10 +145,10 @@ POSE_ROI = None
 POSE_PRE_MARGIN = 1.5  # ワインドアップを含めるため活動開始の何秒前から処理するか
 POSE_POST_MARGIN = 0.5  # キャップ飛翔用の後ろマージンは骨格には不要なので削る
 # キーポイントを {動画名}_pose.json に書き出す（投球フォーム解析 pitching/ 用）。
-# ENABLE_POSE が True のときだけ効く。描画には影響しない。
+# ENABLE_POSE が True なら既定で書き出す。描画だけで良ければ False にする。
 # 書き出したファイルは手元に持ち帰って GPU 無しで解析できる:
 #   python -m pitching run --output out/ --pose 動画名_pose.json --release <フレーム>
-POSE_EXPORT = False
+POSE_EXPORT = True
 POSE_EXPORT_ROLE = "pitcher"  # どの役割のキーポイントを書き出すか
 
 # ピッチング解析設定
@@ -213,6 +213,7 @@ if estimator and POSE_EXPORT:
         # 落とすかどうかは解析側で決める（書き出す側で捨てると後から変えられない）。
         min_score=POSE_MIN_KEYPOINT_SCORE,
     )
+    print(f"Pose keypoints will be saved to: {os.path.join(video_dir, f'{base_name}_pose.json')}")
 
 # 前段フィルタ: 事前走査で投球区間を求め、推論するフレームを絞る
 prefilter_config = prefilter.PrefilterConfig(
