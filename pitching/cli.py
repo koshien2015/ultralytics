@@ -45,10 +45,25 @@ def _build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--output", required=True, help="出力ディレクトリ")
     extract.set_defaults(handler=_handle_extract)
 
-    analyze = subparsers.add_parser("analyze", help="キーポイント列を解析する")
+    analyze = subparsers.add_parser(
+        "analyze",
+        help="キーポイント列を解析する",
+        description="設定YAMLの代わりに、イベントを直接指定してもよい。",
+    )
     analyze.add_argument("--pose-data", required=True, help="pose.json")
-    analyze.add_argument("--config", required=True, help="投球設定 YAML")
+    analyze.add_argument("--config", help="投球設定 YAML（省略時は以下の指定を使う）")
     analyze.add_argument("--output", required=True, help="出力ディレクトリ")
+    analyze.add_argument("--id", help="投球名（既定は pose.json の pitch_id）")
+    analyze.add_argument("--label", help="覚え書き")
+    analyze.add_argument("--release", type=int, help="リリースのフレーム番号")
+    analyze.add_argument("--contact", type=int, help="踏み出し足接地のフレーム番号")
+    analyze.add_argument("--start", type=int, help="解析区間の開始フレーム")
+    analyze.add_argument("--end", type=int, help="解析区間の終了フレーム")
+    analyze.add_argument("--hand", choices=("right", "left"), default="right", help="投げ手")
+    analyze.add_argument(
+        "--batter", choices=("right", "left"), default="left", help="画像上で打者がいる側"
+    )
+    analyze.add_argument("--fps", type=float, help="fps（省略時は pose.json の値）")
     analyze.add_argument("--no-charts", action="store_true", help="グラフを出力しない")
     analyze.add_argument("--overlay-video", action="store_true", help="解析動画も出力する")
     analyze.set_defaults(handler=_handle_analyze)
@@ -69,6 +84,10 @@ def _build_parser() -> argparse.ArgumentParser:
         description="--video を並べた順に1投球ずつ扱う。イベントの指定は直前の --video に付く。",
     )
     run.add_argument("--video", action=_PitchOption, help="入力動画（投球ごとに1つ）")
+    run.add_argument(
+        "--pose", action=_PitchOption,
+        help="抽出済みのキーポイントJSON。これを渡すと推論しない（--video の代わり）",
+    )
     run.add_argument("--config", action=_PitchOption, help="直前の --video に使う設定YAML")
     run.add_argument("--id", action=_PitchOption, help="投球の識別名（既定は動画のファイル名）")
     run.add_argument("--label", action=_PitchOption, help="覚え書き（任意。良否の分類ではない）")
@@ -103,27 +122,38 @@ def _build_parser() -> argparse.ArgumentParser:
 class _PitchOption(argparse.Action):
     """--video ごとに設定をまとめる。イベント指定は直前の --video に属する。"""
 
+    # 新しい投球の始まりになる指定
+    STARTERS = ("video", "pose")
+
     def __call__(self, parser, namespace, values, option_string=None):
         pitches = list(getattr(namespace, "pitches", None) or [])
-        if self.dest == "video":
-            pitches.append({"video": values})
+        if self.dest in self.STARTERS and not (pitches and self.dest not in pitches[-1]
+                                               and len(pitches[-1]) == 1
+                                               and set(pitches[-1]) <= set(self.STARTERS)):
+            pitches.append({self.dest: values})
+        elif self.dest in self.STARTERS:
+            # --video と --pose を同じ投球に併記した場合
+            pitches[-1] = {**pitches[-1], self.dest: values}
         elif not pitches:
-            parser.error(f"{option_string} は --video より後に指定してください")
+            parser.error(f"{option_string} は --video か --pose より後に指定してください")
         else:
             pitches[-1] = {**pitches[-1], self.dest: values}
         namespace.pitches = pitches
 
 
 def _handle_run(args) -> int:
-    from pitching.pipeline import RunOptions, run
+    from pitching.pipeline import PitchInput, RunOptions, run
 
     pitches = getattr(args, "pitches", None)
     if not pitches:
         raise ValueError("--video を1つ以上指定してください")
 
-    configs = [_config_for_run(pitch, args) for pitch in pitches]
+    inputs = [
+        PitchInput(config=_pitch_config(pitch, args), pose_path=_pose_path(pitch))
+        for pitch in pitches
+    ]
     result = run(
-        configs,
+        inputs,
         RunOptions(
             output_dir=Path(args.output),
             force_extract=args.force_extract,
@@ -142,22 +172,29 @@ def _handle_run(args) -> int:
     return 0
 
 
-def _config_for_run(pitch: dict, args) -> PitchConfig:
-    """--video と、それに続く指定から PitchConfig を組み立てる。
+def _pose_path(pitch: dict) -> Path | None:
+    return Path(pitch["pose"]) if pitch.get("pose") else None
 
-    --config が指定されていればそれを土台にし、コマンドラインの指定で上書きする。
+
+def _pitch_config(
+    pitch: dict, args, default_fps: float | None = None, default_id: str = ""
+) -> PitchConfig:
+    """コマンドラインの指定（と任意の設定YAML）から PitchConfig を組み立てる。
+
+    YAML があればそれを土台にし、コマンドラインの指定で上書きする。
     """
-    video = pitch["video"]
+    source = pitch.get("video") or pitch.get("pose") or ""
     base = load_pitch_config(pitch["config"]).model_dump() if pitch.get("config") else {}
 
     overrides = {
-        "pitch_id": pitch.get("id") or base.get("pitch_id") or Path(video).stem,
-        "video_path": video,
+        "pitch_id": pitch.get("id") or base.get("pitch_id") or default_id or _default_id(source),
+        "video_path": pitch.get("video") or base.get("video_path") or "",
         "throwing_hand": base.get("throwing_hand") or args.hand,
         "batter_direction": base.get("batter_direction") or args.batter,
     }
-    if args.fps or base.get("fps"):
-        overrides["fps"] = args.fps or base["fps"]
+    fps = args.fps or base.get("fps") or default_fps
+    if fps:
+        overrides["fps"] = fps
     for key, value in (("start_frame", pitch.get("start")), ("end_frame", pitch.get("end"))):
         if value is not None:
             overrides[key] = value
@@ -173,14 +210,20 @@ def _config_for_run(pitch: dict, args) -> PitchConfig:
         result["label"] = pitch["label"]
 
     extraction = dict(base.get("extraction") or {})
-    if args.pose_model:
+    if getattr(args, "pose_model", None):
         extraction["pose_model_path"] = args.pose_model
-    if args.detection_model:
+    if getattr(args, "detection_model", None):
         extraction["detection_model_path"] = args.detection_model
 
     return PitchConfig.model_validate(
         {**base, **overrides, "events": events, "result": result, "extraction": extraction}
     )
+
+
+def _default_id(source: str) -> str:
+    """投球名を省略されたときの既定。pose.json の拡張子は落とす。"""
+    stem = Path(source).stem if source else "pitch"
+    return stem.removesuffix(".pose") or "pitch"
 
 
 def _handle_extract(args) -> int:
@@ -201,8 +244,22 @@ def _handle_extract(args) -> int:
 
 
 def _handle_analyze(args) -> int:
-    config = load_pitch_config(args.config)
     series = load_pose_json(args.pose_data)
+    config = _pitch_config(
+        {
+            "config": args.config,
+            "id": args.id,
+            "label": args.label,
+            "release": args.release,
+            "contact": args.contact,
+            "start": args.start,
+            "end": args.end,
+            "video": series.video_path,
+        },
+        args,
+        default_fps=series.fps,
+        default_id=series.pitch_id,
+    )
     analysis = analyze_pitch(series, config)
 
     written = write_analysis(analysis, args.output)

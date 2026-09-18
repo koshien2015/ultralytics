@@ -12,7 +12,7 @@ import pytest
 from pitching.adapters.json_adapter import save_pose_json
 from pitching.cli import main
 from pitching.config import PitchConfig
-from pitching.pipeline import RunOptions, run
+from pitching.pipeline import PitchInput, RunOptions, run
 from pitching.tests.support import make_series
 
 ANGLES = [
@@ -138,4 +138,73 @@ def test_cli_run_rejects_options_before_video(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["run", "--output", str(tmp_path), "--release", "116", "--video", "a.mp4"])
 
-    assert "--video より後" in capsys.readouterr().err
+    assert "--video か --pose より後" in capsys.readouterr().err
+
+
+def test_run_accepts_an_external_pose_file(tmp_path):
+    """別マシンで抽出した pose.json を直接渡せる（推論しない）。"""
+    external = tmp_path / "incoming" / "throw_01.pose.json"
+    series = make_series(ANGLES, start=100)
+    series.pitch_id = "throw_01"
+    save_pose_json(series, external)
+
+    result = run(
+        [PitchInput(config=config_for("throw_01", 116), pose_path=external)],
+        RunOptions(output_dir=tmp_path / "out", charts=False),
+    )
+
+    assert any("キーポイントを読み込み" in message for message in result.messages)
+    # 出力先だけで再解析できるよう、横にも置かれる
+    assert (tmp_path / "out" / "throw_01" / "pose.json").is_file()
+
+
+def test_cli_run_with_pose_files_needs_no_video(tmp_path):
+    first = tmp_path / "a.pose.json"
+    second = tmp_path / "b.pose.json"
+    for path, pitch_id in ((first, "a"), (second, "b")):
+        series = make_series(ANGLES, start=100)
+        series.pitch_id = pitch_id
+        save_pose_json(series, path)
+
+    code = main([
+        "run", "--output", str(tmp_path / "out"),
+        "--pose", str(first), "--release", "116", "--contact", "104",
+        "--pose", str(second), "--release", "113", "--contact", "104",
+        "--no-charts",
+    ])
+
+    assert code == 0
+    assert (tmp_path / "out" / "a" / "metrics.json").is_file()
+    assert (tmp_path / "out" / "b" / "metrics.json").is_file()
+    assert (tmp_path / "out" / "viewer.html").is_file()
+
+
+def test_cli_run_strips_the_pose_suffix_for_the_default_id(tmp_path):
+    """a.pose.json の投球名は a になる。"""
+    path = tmp_path / "throw_07.pose.json"
+    save_pose_json(make_series(ANGLES, start=100), path)
+
+    code = main([
+        "run", "--output", str(tmp_path / "out"), "--pose", str(path),
+        "--release", "116", "--no-charts", "--no-viewer",
+    ])
+
+    assert code == 0
+    assert (tmp_path / "out" / "throw_07" / "metrics.json").is_file()
+
+
+def test_cli_analyze_works_without_a_config_file(tmp_path):
+    """設定YAMLを書かずに、イベントだけ指定して解析できる。"""
+    pose_path = tmp_path / "throw_01.pose.json"
+    save_pose_json(make_series(ANGLES, start=100), pose_path)
+
+    code = main([
+        "analyze", "--pose-data", str(pose_path), "--output", str(tmp_path / "out"),
+        "--release", "116", "--contact", "104", "--hand", "right", "--batter", "left",
+        "--no-charts",
+    ])
+
+    assert code == 0
+    summary = json.loads((tmp_path / "out" / "metrics.json").read_text(encoding="utf-8"))
+    assert summary["events"]["release"]["frame"] == 116
+    assert summary["capture"]["fps"] == 60.0

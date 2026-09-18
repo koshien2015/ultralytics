@@ -7,6 +7,9 @@ services:
     ipc: host
     volumes:
       - ../shared:/shared
+      # 投球フォーム解析の抽出台本。読み取り専用で1フォルダだけ入れる。
+      # 使い方: python /pitching-tools/extract-pose.py /shared/... -o /shared/out/x.pose.json
+      - ../pitching/tools:/pitching-tools:ro
     ports:
       - "6006:6006"
     environment:

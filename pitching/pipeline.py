@@ -24,6 +24,19 @@ from pitching.visualization.viewer import write_viewer
 
 
 @dataclass
+class PitchInput:
+    """1投球分の入力。
+
+    pose_path があればそれを使い、無ければ出力先の pose.json、
+    それも無ければ動画から抽出する。推論環境が別マシン（Docker など）で、
+    pose.json だけ持ち帰った場合に pose_path を使う。
+    """
+
+    config: PitchConfig
+    pose_path: Path | None = None
+
+
+@dataclass
 class RunOptions:
     """run の振る舞い。既定はすべて「作る・使い回す」。"""
 
@@ -41,20 +54,24 @@ class RunResult:
     messages: list[str]
 
 
-def run(configs: list[PitchConfig], options: RunOptions) -> RunResult:
+def run(inputs: list[PitchInput | PitchConfig], options: RunOptions) -> RunResult:
     """投球ごとに抽出と解析を行い、2球なら比較とビューアまで作る。"""
-    if not configs:
+    pitches = [
+        item if isinstance(item, PitchInput) else PitchInput(config=item) for item in inputs
+    ]
+    if not pitches:
         raise ValueError("投球が指定されていません")
-    if len(configs) > 2:
+    if len(pitches) > 2:
         raise ValueError("一度に扱えるのは2投球までです")
 
     outputs: dict[str, Path] = {}
     messages: list[str] = []
     analyses: list[PitchAnalysis] = []
 
-    for config in configs:
+    for pitch in pitches:
+        config = pitch.config
         directory = options.output_dir / config.pitch_id
-        series, note = _pose_series(config, directory, options.force_extract)
+        series, note = _pose_series(pitch, directory, options.force_extract)
         messages.append(f"{config.pitch_id}: {note}")
 
         # 時間の基準はキーポイント側に合わせる。設定の fps とずれていると、
@@ -96,18 +113,24 @@ def run(configs: list[PitchConfig], options: RunOptions) -> RunResult:
     return RunResult(analyses=analyses, outputs=outputs, messages=messages)
 
 
-def _pose_series(
-    config: PitchConfig, directory: Path, force_extract: bool
-) -> tuple[PoseSeries, str]:
-    """キーポイントを用意する。既にあれば使い回す。"""
-    pose_path = directory / "pose.json"
-    if pose_path.is_file() and not force_extract:
-        return load_pose_json(pose_path), f"既存のキーポイントを使用（{pose_path}）"
+def _pose_series(pitch: PitchInput, directory: Path, force_extract: bool) -> tuple[PoseSeries, str]:
+    """キーポイントを用意する。渡されたもの・既にあるものを優先し、無ければ抽出する。"""
+    local_path = directory / "pose.json"
+
+    if pitch.pose_path is not None:
+        series = load_pose_json(pitch.pose_path)
+        # 出力先だけ見れば再解析できるよう、渡されたものも横に置いておく
+        save_pose_json(series, local_path)
+        save_pose_csv(series, directory / "pose.csv")
+        return series, f"キーポイントを読み込み（{pitch.pose_path}）"
+
+    if local_path.is_file() and not force_extract:
+        return load_pose_json(local_path), f"既存のキーポイントを使用（{local_path}）"
 
     from pitching.adapters.ultralytics_adapter import extract_pose_series
 
-    series = extract_pose_series(config)
-    save_pose_json(series, pose_path)
+    series = extract_pose_series(pitch.config)
+    save_pose_json(series, local_path)
     save_pose_csv(series, directory / "pose.csv")
     note = f"{len(series)} フレームを抽出"
     if series.notes:
