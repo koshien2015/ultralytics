@@ -191,6 +191,38 @@ class RoleTracker:
         }
 
 
+def select_person(
+    update_result: dict,
+    role: str = "pitcher",
+    min_score: float = 0.5,
+) -> tuple[PersonPose | None, str]:
+    """`PoseEstimator.update` の結果から、対象の役割の人物を1人選ぶ。
+
+    役割が決まっていればそれを採る。決まっていない（検出結果が無い・
+    役割bboxと重ならない）場合は、最も大きい骨格で代用する。代用は
+    別人を拾いうるので、どちらで選んだかを第2要素で返す。
+
+    Returns:
+        (人物 or None, "role_bbox" | "largest_bbox" | "none")
+    """
+    persons = update_result.get("persons", [])
+    roles = update_result.get("roles", {})
+
+    for person in persons:
+        if person.track_id is not None and roles.get(int(person.track_id)) == role:
+            return person, "role_bbox"
+
+    best, best_area = None, 0.0
+    for person in persons:
+        box = keypoint_bbox(person.keypoints, person.scores, min_score)
+        if box is None:
+            continue
+        area = (box[2] - box[0]) * (box[3] - box[1])
+        if area > best_area:
+            best, best_area = person, area
+    return (best, "largest_bbox") if best is not None else (None, "none")
+
+
 def pose_prefilter_config(
     base: PrefilterConfig,
     *,

@@ -86,28 +86,17 @@ def test_script_only_needs_ultralytics_side_packages():
     assert outside <= {"cv2", "ultralytics", "pose"}
 
 
-def test_role_box_wins_over_size():
+def test_pitcher_selection_is_delegated_to_shared_pose():
+    """選び方は shared/pose.py の select_person に任せる。"""
     module = load_script()
-    small, large = make_person(1, 10.0), make_person(2, 100.0)
+    sentinel = (make_person(7, 50.0), "role_bbox")
 
-    person, mode = module.select_pitcher(
-        {"persons": [small, large], "roles": {1: "pitcher"}}, StubPoseModule, 0.3
-    )
+    class StubWithSelector(StubPoseModule):
+        @staticmethod
+        def select_person(result, role, min_score):
+            return sentinel
 
-    assert person is small
-    assert mode == "role_bbox"
-
-
-def test_largest_bbox_is_the_fallback():
-    module = load_script()
-    small, large = make_person(1, 10.0), make_person(2, 100.0)
-
-    person, mode = module.select_pitcher(
-        {"persons": [small, large], "roles": {}}, StubPoseModule, 0.3
-    )
-
-    assert person is large
-    assert mode == "largest_bbox"
+    assert module.select_pitcher({}, StubWithSelector, 0.3) is sentinel
 
 
 def test_missing_person_becomes_null_keypoints():

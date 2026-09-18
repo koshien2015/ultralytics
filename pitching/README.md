@@ -34,7 +34,7 @@ pitching/
   visualization/         グラフ・解析動画・比較画像・棒人間ビューア
   pipeline.py            run（抽出→解析→比較→ビューア）の段取り
   cli.py                 CLI
-  tools/extract-pose.py  推論環境（Docker）用の抽出台本。単体で完結する
+  tools/extract-pose.py  推論環境用の抽出台本（track.py を使わない場合）。単体で完結する
   tools/make-viewer.py   ビューア生成スクリプト（単体で実行できる）
   examples/              設定例と、動画なしで試すための合成データ生成
   tests/                 合成座標による単体テスト（実動画・GPU 不要）
@@ -78,27 +78,42 @@ python -m pitching run --output output/compare \
 YOLO Pose は GPU のあるコンテナ、解析とビューアは手元、という分け方ができる。
 やり取りするのは **pose.json 1ファイルだけ**。
 
-`tools/extract-pose.py` はこの1ファイルと `shared/pose.py` だけで動く
-（pydantic も matplotlib も import しない）ので、リポジトリ全体をマウントしなくてよい。
-`docker/docker-compose.yml` は `../shared` に加えて `../pitching/tools` を
-読み取り専用で入れてある。
+**すでに `track.py` を回しているなら**、その先頭のフラグを2つ立てるだけでよい。
+キャップ検出と同じ1コマンドのまま、`{動画名}_pose.json` が増える。
+
+```python
+# shared/track.py
+ENABLE_POSE = True
+POSE_EXPORT = True     # ← これで {動画名}_pose.json が出る
+```
 
 ```bash
-# コンテナ側: 動画を指定してキーポイントを書き出す
+# 推論環境（いつもどおり）
+cd shared && python track.py input/a.mov
+
+# 手元（GPU 不要）
+python -m pitching run --output output/compare \
+  --pose shared/input/a_pose.json --release 152 --contact 140 \
+  --pose shared/input/b_pose.json --release 160 --contact 148
+```
+
+書き出されるのは**姿勢推定の窓の中だけ**（窓の外は推論していないので含まれない）。
+どの区間が入ったかは実行時のログと pose.json の `meta.notes` に出るので、
+1投球ぶんを `--start` / `--end` で切り出す。
+
+**`track.py` を使わずに抽出だけしたいとき**は `tools/extract-pose.py` を使う。
+この1ファイルと `shared/pose.py` だけで動き、pydantic も matplotlib も import しない。
+`docker/docker-compose.yml` は `../pitching/tools` を読み取り専用で入れてある。
+
+```bash
 docker compose -f docker/docker-compose.yml exec yolov8 \
   python /pitching-tools/extract-pose.py /shared/input/a.mov \
     -o /shared/out/a.pose.json \
     --start 100 --end 180 \
     --detection-model /shared/yolo8m_20250510.pt
-
-# 手元: pose.json だけで解析・比較・ビューアまで（GPU 不要）
-python -m pitching run --output output/compare \
-  --pose shared/out/a.pose.json --release 152 --contact 140 \
-  --pose shared/out/b.pose.json --release 160 --contact 148
 ```
 
 `shared/pose.py` の場所が違うときは `--shared-dir` か環境変数 `PITCHING_SHARED_DIR` で指定する。
-マウントを増やしたくなければ `docker cp pitching/tools/extract-pose.py <container>:/tmp/` でもよい。
 
 `--pose` を使うと推論は一切走らないので、イベントのフレーム番号を直しながら
 何度でも解析し直せる。

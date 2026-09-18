@@ -128,29 +128,11 @@ def _run(capture, cv2, pose, estimator, detector, config: PitchConfig):
 
 
 def _select_pitcher(result: dict, pose, min_score: float):
-    """姿勢推定結果から投手1人を選ぶ。選べなければ (None, mode)。"""
-    persons = result.get("persons", [])
-    roles = result.get("roles", {})
+    """姿勢推定結果から投手1人を選ぶ。
 
-    for person in persons:
-        if person.track_id is None:
-            continue
-        if roles.get(int(person.track_id)) == "pitcher":
-            return person, "role_bbox"
-
-    # 役割が分からない場合の代替。誤りうるので notes に残す。
-    best = None
-    best_area = 0.0
-    for person in persons:
-        box = pose.keypoint_bbox(person.keypoints, person.scores, min_score)
-        if box is None:
-            continue
-        area = (box[2] - box[0]) * (box[3] - box[1])
-        if area > best_area:
-            best, best_area = person, area
-    if best is not None:
-        return best, "largest_bbox"
-    return None, "none"
+    選び方は shared/pose.py に置いてある（track.py の書き出しと同じ挙動にするため）。
+    """
+    return pose.select_person(result, "pitcher", min_score)
 
 
 def _to_pose_frame(person, keypoint_names, frame_index: int, fps: float) -> PoseFrame:

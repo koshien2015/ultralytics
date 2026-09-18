@@ -7,6 +7,7 @@ import tennis
 import prefilter
 from pitching_analysis import PitchingAnalyzer
 import pose
+import pose_export
 
 
 def draw_neon_polyline(
@@ -143,6 +144,12 @@ POSE_ROLES = ("pitcher",)  # 骨格を描く役割。("pitcher", "batter") で�
 POSE_ROI = None
 POSE_PRE_MARGIN = 1.5  # ワインドアップを含めるため活動開始の何秒前から処理するか
 POSE_POST_MARGIN = 0.5  # キャップ飛翔用の後ろマージンは骨格には不要なので削る
+# キーポイントを {動画名}_pose.json に書き出す（投球フォーム解析 pitching/ 用）。
+# ENABLE_POSE が True のときだけ効く。描画には影響しない。
+# 書き出したファイルは手元に持ち帰って GPU 無しで解析できる:
+#   python -m pitching run --output out/ --pose 動画名_pose.json --release <フレーム>
+POSE_EXPORT = False
+POSE_EXPORT_ROLE = "pitcher"  # どの役割のキーポイントを書き出すか
 
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
@@ -193,6 +200,19 @@ out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 # ピッチング解析にFPSを設定
 if analyzer:
     analyzer.set_fps(fps)
+
+# キーポイントの書き出し（推論はしない。estimator の結果を溜めるだけ）
+recorder = None
+if estimator and POSE_EXPORT:
+    recorder = pose_export.PoseRecorder(
+        keypoint_names=pose.KEYPOINT_NAMES,
+        fps=fps,
+        video_path=original_video,
+        role=POSE_EXPORT_ROLE,
+        # 人物選びにだけ使う閾値。キーポイントは信頼度ごと全部書き出し、
+        # 落とすかどうかは解析側で決める（書き出す側で捨てると後から変えられない）。
+        min_score=POSE_MIN_KEYPOINT_SCORE,
+    )
 
 # 前段フィルタ: 事前走査で投球区間を求め、推論するフレームを絞る
 prefilter_config = prefilter.PrefilterConfig(
@@ -271,6 +291,8 @@ while True:
                 pose_in_window = True
                 pose_pending_reset = False
             pose_result = estimator.update(frame_original, results)
+            if recorder:
+                recorder.record(frame_count, pose_result)
         else:
             pose_in_window = False
 
@@ -420,6 +442,20 @@ print(f"  Processing speed: {processing_speed:.2f}x realtime")
 print(f"  Prefilter: {gate.summary}")
 if estimator:
     print(f"  Pose: {pose_gate.summary}")
+
+# キーポイントの書き出し（投球フォーム解析 pitching/ 用）
+if recorder and len(recorder):
+    pose_json_path = os.path.join(video_dir, f"{base_name}_pose.json")
+    recorder.save(pose_json_path)
+    print(f"\nPose keypoints saved to: {pose_json_path}")
+    print(f"  {len(recorder)} frames, selection={list(recorder.selection_modes)}")
+    for start, end in recorder.frame_ranges():
+        print(f"  frames {start}-{end}")
+    print("  手元で解析するには:")
+    print(f"    python -m pitching run --output out/ --pose {base_name}_pose.json \\")
+    print("      --release <リリースのフレーム番号> --contact <足接地のフレーム番号>")
+elif recorder:
+    print("\nPose keypoints: 記録されたフレームがありません（投球区間が検出されていない）")
 if processing_speed < 1.0:
     print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
 else:

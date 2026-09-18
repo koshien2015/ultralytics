@@ -49,34 +49,17 @@ def make_person(track_id, size, score=0.9):
     return StubPerson(track_id, keypoints, np.full(3, score))
 
 
-def test_role_box_selection_wins():
-    """役割bboxで投手が分かるなら、大きさに関係なくそれを採る。"""
-    small = make_person(1, 10.0)
-    large = make_person(2, 100.0)
-    result = {"persons": [small, large], "roles": {1: "pitcher", 2: "catcher"}}
+def test_pitcher_selection_is_delegated_to_shared_pose():
+    """人物の選び方は shared/pose.py に1つだけ置く（track.py の書き出しと揃えるため）。"""
+    sentinel = (make_person(7, 50.0), "role_bbox")
 
-    person, mode = _select_pitcher(result, StubPoseModule, 0.3)
+    class StubWithSelector(StubPoseModule):
+        @staticmethod
+        def select_person(result, role, min_score):
+            assert role == "pitcher"
+            return sentinel
 
-    assert person is small
-    assert mode == "role_bbox"
-
-
-def test_largest_bbox_is_the_fallback():
-    small = make_person(1, 10.0)
-    large = make_person(2, 100.0)
-    result = {"persons": [small, large], "roles": {}}
-
-    person, mode = _select_pitcher(result, StubPoseModule, 0.3)
-
-    assert person is large
-    assert mode == "largest_bbox"
-
-
-def test_no_person_is_reported():
-    person, mode = _select_pitcher({"persons": [], "roles": {}}, StubPoseModule, 0.3)
-
-    assert person is None
-    assert mode == "none"
+    assert _select_pitcher({"persons": [], "roles": {}}, StubWithSelector, 0.3) is sentinel
 
 
 def test_missing_person_becomes_missing_keypoints():

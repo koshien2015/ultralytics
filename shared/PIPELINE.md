@@ -35,16 +35,29 @@
 | `track.py` | 推論＋軌跡描画＋解析のエントリポイント |
 | `pitching_analysis.py` | ストライクゾーン推定・リリース検出・座標正規化 |
 | `pose.py` | YOLO Pose による骨格推定と、検出の役割bboxを使った人物（投手など）の割り当て |
+| `pose_export.py` | キーポイント時系列の書き出し（投球フォーム解析 `pitching/` 用） |
 | `trajectory_fitter.py` | RANSAC軌跡フィット・誤検出除去・欠損補間・コース/球速推定 |
 | `tests/test_trajectory_fitter.py` | trajectory_fitter のユニットテスト（27件） |
 
 投球フォームの解析（関節角度・リリース時の肘の伸び・2球の比較・棒人間ビューア）は
 別パッケージ `../pitching/` にある。手順は `../pitching/README.md`。
 
-`track.py` の `ENABLE_POSE` は骨格を**動画に描くだけ**で、キーポイントは保存しない。
-フォーム解析にはキーポイントの時系列が要るので、`pitching` 側が `pose.py` を使って
-解析区間を1フレームずつ推論し直す（prefilter の間引きは使わない。間引くと
-「推論していないフレーム」と「信頼度が低いフレーム」を区別できなくなるため）。
+`track.py` で `ENABLE_POSE = True` と `POSE_EXPORT = True` にすると、骨格を描くのに加えて
+`{動画名}_pose.json`（キーポイント時系列）を書き出す。これを手元に持ち帰れば、
+GPU 無しで解析・比較・ビューアまで作れる。
+
+```bash
+# 推論環境（いつもどおり）
+cd shared && python track.py 動画.mp4
+
+# 手元（GPU 不要）
+python -m pitching run --output out/ --pose 動画_pose.json --release <フレーム番号>
+```
+
+姿勢推定の窓は `pose_prefilter_config` が `search_stride=1` にしているので、**窓の中は
+毎フレーム推論する**。窓の外は推論しないため書き出しにも含まれず、フレーム番号が飛ぶ。
+推論を掛けなかったフレームは記録しない: 記録すると解析側から「推論していない」のか
+「信頼度が低い」のか区別できなくなり、短い欠損だけを補間する前処理が誤動作する。
 
 ## 実行環境（GPU搭載PCのローカル実行が前提）
 

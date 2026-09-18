@@ -42,23 +42,12 @@ def load_pose_module(shared_dir: Path):
 
 
 def select_pitcher(result: dict, pose, min_score: float):
-    """姿勢推定結果から投手1人を選ぶ。役割bboxが無ければ最大の骨格で代用する。"""
-    persons = result.get("persons", [])
-    roles = result.get("roles", {})
+    """姿勢推定結果から投手1人を選ぶ。
 
-    for person in persons:
-        if person.track_id is not None and roles.get(int(person.track_id)) == "pitcher":
-            return person, "role_bbox"
-
-    best, best_area = None, 0.0
-    for person in persons:
-        box = pose.keypoint_bbox(person.keypoints, person.scores, min_score)
-        if box is None:
-            continue
-        area = (box[2] - box[0]) * (box[3] - box[1])
-        if area > best_area:
-            best, best_area = person, area
-    return (best, "largest_bbox") if best is not None else (None, "none")
+    選び方そのものは shared/pose.py にある。track.py の書き出しと
+    同じ結果になるよう、ここでは呼ぶだけにする。
+    """
+    return pose.select_person(result, "pitcher", min_score)
 
 
 def frame_payload(person, keypoint_names, frame_index: int, fps: float) -> dict:

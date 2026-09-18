@@ -11,6 +11,7 @@ import pytest
 from prefilter import PrefilterConfig
 from pose import (
     KEYPOINT_NAMES,
+    select_person,
     SKELETON_EDGES,
     PersonPose,
     RoleTracker,
@@ -229,3 +230,60 @@ class TestDrawSkeleton:
         person = make_person(track_id=1, x1=100, y1=100, x2=300, y2=400, conf=0.05)
         out = draw_skeleton(frame, person, color=(0, 255, 255), min_score=0.5)
         assert not out.any(), "低信頼のキーポイントが描かれている"
+
+
+class TestSelectPerson:
+    """対象の役割の人物を1人選ぶ。track.py の書き出しとアダプタで共有する。"""
+
+    def test_role_assignment_wins_over_size(self):
+        small = make_person(track_id=1, x1=0, y1=0, x2=20, y2=40)
+        large = make_person(track_id=2, x1=0, y1=0, x2=200, y2=400)
+        result = {"persons": [small, large], "roles": {1: "pitcher", 2: "catcher"}}
+
+        person, mode = select_person(result, "pitcher", min_score=0.5)
+
+        assert person is small
+        assert mode == "role_bbox"
+
+    def test_largest_skeleton_is_the_fallback(self):
+        small = make_person(track_id=1, x1=0, y1=0, x2=20, y2=40)
+        large = make_person(track_id=2, x1=0, y1=0, x2=200, y2=400)
+
+        person, mode = select_person({"persons": [small, large], "roles": {}}, "pitcher", 0.5)
+
+        assert person is large, "役割が決まらないときは最大の骨格を採る"
+        assert mode == "largest_bbox"
+
+    def test_other_roles_can_be_selected(self):
+        pitcher = make_person(track_id=1, x1=0, y1=0, x2=20, y2=40)
+        batter = make_person(track_id=2, x1=0, y1=0, x2=30, y2=60)
+        result = {"persons": [pitcher, batter], "roles": {1: "pitcher", 2: "batter"}}
+
+        person, mode = select_person(result, "batter", min_score=0.5)
+
+        assert person is batter
+        assert mode == "role_bbox"
+
+    def test_no_person_is_reported(self):
+        person, mode = select_person({"persons": [], "roles": {}}, "pitcher", 0.5)
+
+        assert person is None
+        assert mode == "none"
+
+    def test_low_confidence_only_person_is_not_selected(self):
+        """信頼できるキーポイントが1つも無い人物は、大きさを測れないので選ばない。"""
+        faint = make_person(track_id=1, x1=0, y1=0, x2=200, y2=400, conf=0.05)
+
+        person, mode = select_person({"persons": [faint], "roles": {}}, "pitcher", 0.5)
+
+        assert person is None
+        assert mode == "none"
+
+    def test_person_without_track_id_can_still_be_the_fallback(self):
+        """トラッカーIDが付かなくても、最大の骨格としてなら選ばれる。"""
+        anonymous = make_person(track_id=None, x1=0, y1=0, x2=200, y2=400)
+
+        person, mode = select_person({"persons": [anonymous], "roles": {}}, "pitcher", 0.5)
+
+        assert person is anonymous
+        assert mode == "largest_bbox"
