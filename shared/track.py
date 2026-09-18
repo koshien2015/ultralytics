@@ -152,7 +152,7 @@ POSE_EXPORT = True
 POSE_EXPORT_ROLE = "pitcher"  # どの役割のキーポイントを書き出すか
 # 途中経過を書き出す間隔（記録フレーム数）。最後にまとめて書くだけだと、
 # 長い動画で中断・強制終了したときに何も残らない。0 で無効。
-POSE_EXPORT_FLUSH_FRAMES = 300
+POSE_EXPORT_FLUSH_FRAMES = 60
 
 # ピッチング解析設定
 ENABLE_PITCHING_ANALYSIS = True  # ピッチング解析を有効にするか
@@ -246,11 +246,17 @@ if ENABLE_PREFILTER:
     print(f"  {len(windows)} windows, {covered} frames to consider")
 
     pose_windows = prefilter.detect_windows(profile, pose_config)
-    pose_gate = prefilter.InferenceGate(pose_windows, pose_config)
     pose_window_count = len(pose_windows)
+    # 切り出し済みの短いクリップでは窓が立たないことがある。書き出す設定なら全フレームを見る。
+    pose_gate_windows = pose_export.gate_windows(pose_windows, ENABLE_POSE and POSE_EXPORT)
+    pose_gate = prefilter.InferenceGate(pose_gate_windows, pose_config)
     if ENABLE_POSE:
-        pose_covered = prefilter.windows_frame_count(pose_windows)
-        print(f"  pose: {len(pose_windows)} windows, {pose_covered} frames")
+        if pose_gate_windows is None:
+            print("  pose: 投球区間の窓が立たなかったため全フレームを対象にします"
+                  "（切り出し済みクリップ想定）")
+        else:
+            pose_covered = prefilter.windows_frame_count(pose_windows)
+            print(f"  pose: {len(pose_windows)} windows, {pose_covered} frames")
 else:
     gate = prefilter.InferenceGate(None, prefilter_config)
     pose_gate = prefilter.InferenceGate(None, pose_config)

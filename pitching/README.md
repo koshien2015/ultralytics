@@ -103,6 +103,10 @@ python -m pitching run --output output/compare \
 どの区間が入ったかは実行時のログと pose.json の `meta.notes` に出るので、
 1投球ぶんを `--start` / `--end` で切り出す。
 
+投球部分だけを切り出した短いクリップでは、前段フィルタが窓を立てられないことがある
+（活動量の中央値を基準にするので、全編が動いている映像では閾値を超えない）。
+その場合は自動で全フレームを対象にする。ログに「全フレームを対象にします」と出る。
+
 **`track.py` を使わずに抽出だけしたいとき**は `tools/extract-pose.py` を使う。
 この1ファイルと `shared/pose.py` だけで動き、pydantic も matplotlib も import しない。
 `docker/docker-compose.yml` は `../pitching/tools` を読み取り専用で入れてある。

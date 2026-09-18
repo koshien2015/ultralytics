@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from pose import KEYPOINT_NAMES, PersonPose
-from pose_export import SCHEMA_VERSION, PoseRecorder
+from pose_export import SCHEMA_VERSION, PoseRecorder, gate_windows
 
 
 def make_person(track_id=1, conf=0.9, offset=0.0):
@@ -136,3 +136,20 @@ class TestSave:
     def test_saving_nothing_is_an_error(self, tmp_path):
         with pytest.raises(ValueError):
             make_recorder().save(tmp_path / "x.json")
+
+
+class TestGateWindows:
+    """推論を掛ける区間の決め方。None は「区間指定なし＝全フレーム」。"""
+
+    def test_windows_are_used_when_they_exist(self):
+        windows = ((100, 200), (400, 500))
+
+        assert gate_windows(windows, export_enabled=True) is windows
+
+    def test_empty_windows_fall_back_to_all_frames_when_exporting(self):
+        """切り出し済みクリップでは窓が立たない。黙って0フレームにしない。"""
+        assert gate_windows((), export_enabled=True) is None
+
+    def test_empty_windows_stay_empty_when_not_exporting(self):
+        """描画だけのときは従来どおり。全フレーム推論して遅くしない。"""
+        assert gate_windows((), export_enabled=False) == ()

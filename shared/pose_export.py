@@ -24,6 +24,25 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 
 
+def gate_windows(pose_windows, export_enabled: bool):
+    """姿勢推定の推論を掛ける区間を決める。
+
+    prefilter は「長い動画から投球区間を探す」前提で、活動量の中央値を基準に
+    閾値を作る。全編が投球動作の切り出し済みクリップでは中央値そのものが高く、
+    窓が1つも立たないことがある。その状態で書き出すと0フレームになり、
+    「実行したのにファイルが無い」になる。
+
+    書き出すつもりで実行しているときに限り、窓が空なら全フレームを対象にする
+    （None は InferenceGate にとって「区間指定なし」の意味）。
+
+    Returns:
+        窓のタプル、または None（全フレーム対象）
+    """
+    if export_enabled and not pose_windows:
+        return None
+    return pose_windows
+
+
 class PoseRecorder:
     """1本の動画分のキーポイントを溜めて JSON にする。"""
 

@@ -62,6 +62,10 @@ class TestPoseExport:
         """溜める処理と書き出す処理の両方が呼ばれていること。"""
         assert {"record", "save"} <= called_attributes("recorder")
 
+    def test_flush_interval_fits_a_short_clip(self):
+        """切り出した数十フレームのクリップでも、途中経過が1回は書かれること。"""
+        assert 0 < constants()["POSE_EXPORT_FLUSH_FRAMES"] <= 90
+
     def test_pose_export_module_is_imported(self):
         imported = {
             alias.name
