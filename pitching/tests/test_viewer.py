@@ -143,3 +143,22 @@ def test_embedded_json_is_valid(pitch_series, pitch_config):
     payload = html.split("const DATA = ", 1)[1].split(";\n", 1)[0]
 
     assert json.loads(payload)["pitches"][0]["pitch_id"] == "synthetic_good"
+
+
+def test_vectors_use_their_own_colors():
+    """ベクトルは骨格と別の色で描く（線か矢印か見分けるため）。"""
+    from pitching.visualization.viewer_template import TEMPLATE
+
+    assert "const VECTOR_COLORS = ['#6EE7A0', '#C77DFF'];" in TEMPLATE
+    assert "drawVectors(context, project, pitch, cursor, VECTOR_COLORS[index]);" in TEMPLATE
+
+
+def test_skeleton_and_vector_colors_do_not_overlap():
+    from pitching.visualization.viewer_template import TEMPLATE
+    import re
+
+    def palette(name: str) -> set[str]:
+        line = re.search(rf"const {name} = \[(.*?)\];", TEMPLATE).group(1)
+        return set(re.findall(r"#[0-9A-Fa-f]{6}", line))
+
+    assert palette("COLORS") & palette("VECTOR_COLORS") == set()

@@ -19,8 +19,10 @@ TEMPLATE = r'''<!doctype html>
     --rule:  #2A3A42;
     --text:  #E8EFF2;
     --muted: #7C949E;
-    --a:     #BFE9F2;  /* 投球A */
-    --b:     #FFB23E;  /* 投球B */
+    --a:     #BFE9F2;  /* 投球A の骨格 */
+    --b:     #FFB23E;  /* 投球B の骨格 */
+    --a-vec: #6EE7A0;  /* 投球A のベクトル */
+    --b-vec: #C77DFF;  /* 投球B のベクトル */
     --warn:  #FF6B6B;
   }
   * { box-sizing: border-box; }
@@ -158,6 +160,8 @@ const DATA = __DATA__;
 const PITCHES = DATA.pitches;
 const EDGES = DATA.edges;
 const COLORS = ['#BFE9F2', '#FFB23E'];
+// ベクトルは骨格と別の色にする。骨格と同じ色だと、線なのか矢印なのか見分けにくい。
+const VECTOR_COLORS = ['#6EE7A0', '#C77DFF'];
 const EVENT_LABELS = {
   foot_contact: '足接地', max_elbow_flexion: '最大屈曲',
   extension_start: '伸展開始', release: 'リリース',
@@ -344,11 +348,17 @@ function layoutCanvases() {
   ui.canvases.innerHTML = '';
   if (ui.layout.value === 'overlay') {
     const legend = PITCHES.map((p, i) =>
-      `<span style="color:${COLORS[i]}">■ ${p.display_name}</span>`).join('　');
+      `<span style="color:${COLORS[i]}">■ ${p.display_name}</span>` +
+      `<span style="color:${VECTOR_COLORS[i]}"> ➜</span>`).join('　');
     canvases = [{ canvas: makeCanvas(legend, null, true), pitches: PITCHES.map((p, i) => i) }];
   } else {
     canvases = PITCHES.map((pitch, index) => ({
-      canvas: makeCanvas(pitch.display_name, COLORS[index]),
+      canvas: makeCanvas(
+        `<span style="color:${COLORS[index]}">${pitch.display_name}</span>` +
+        `<span style="color:${VECTOR_COLORS[index]}"> ➜ ベクトル</span>`,
+        null,
+        true,
+      ),
       pitches: [index],
     }));
   }
@@ -516,7 +526,7 @@ function draw() {
       if (!frame) return;
       if (ui.trail.checked) drawTrail(context, project, pitch, cursor, color);
       drawStickFigure(context, project, frame, color, pitches.length > 1 ? 0.85 : 1);
-      drawVectors(context, project, pitch, cursor, color);
+      drawVectors(context, project, pitch, cursor, VECTOR_COLORS[index]);
     });
   });
   updateReadout();
@@ -684,6 +694,7 @@ ui.note.innerHTML = `
   <strong>読み方</strong><br>
   座標は身体サイズ（${PITCHES[0].scale_mode}）を1とした相対値。原点は足接地時の股関節中点。
   Xは打者方向が正、Yは上が正。<br>
+  <span style="color:${VECTOR_COLORS[0]}">➜ 矢印</span>は骨格と別の色で描く。
   <span class="warn">矢印は力そのものではない。</span>
   速度は連続2フレームの変位、加速度はその変化（3フレームの2階差分）で、
   向きが力の向きに相当する。質量が不明なので大きさはニュートンではなく相対値。<br>
