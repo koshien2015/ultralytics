@@ -7,13 +7,17 @@ services:
     ipc: host
     volumes:
       - ../shared:/shared
-      # 投球フォーム解析の抽出台本。読み取り専用で1フォルダだけ入れる。
-      # 使い方: python /pitching-tools/extract-pose.py /shared/... -o /shared/out/x.pose.json
-      - ../pitching/tools:/pitching-tools:ro
+      # 投球フォーム解析。読み取り専用。
+      # 抽出だけなら台本1つで動く:
+      #   python /pitching/tools/extract-pose.py /shared/x.mov -o /shared/x_pose.json
+      # ビューアまでコンテナで作るなら pydantic が要る（無ければ pip install pydantic）
+      - ../pitching:/pitching:ro
     ports:
       - "6006:6006"
     environment:
       - DISPLAY=:1
+      # /pitching を import できるようにする（tools/*.py が参照する）
+      - PITCHING_ROOT=/
     networks:
       - cap_backend
     tty: true

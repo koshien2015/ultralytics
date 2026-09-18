@@ -17,7 +17,12 @@ from pitching.adapters.json_adapter import load_pose_json, save_pose_csv, save_p
 from pitching.analysis import analyze_pitch
 from pitching.comparison.comparator import compare_summaries
 from pitching.config import PitchConfig, load_pitch_config
-from pitching.reporting.loader import load_analysis, load_summary, resolve_metrics_path
+from pitching.reporting.loader import (
+    load_analysis,
+    load_summary,
+    resolve_input,
+    resolve_metrics_path,
+)
 from pitching.reporting.writers import write_analysis, write_comparison
 from pitching.visualization import charts
 
@@ -110,10 +115,26 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--overlay-video", action="store_true", help="解析動画も出力する")
     run.set_defaults(handler=_handle_run)
 
-    viewer = subparsers.add_parser("viewer", help="棒人間ビューアのHTMLを作る")
-    viewer.add_argument("pitch", nargs="+", help="analyze の出力ディレクトリ（最大2つ）")
+    viewer = subparsers.add_parser(
+        "viewer",
+        help="棒人間ビューアのHTMLを作る",
+        description=(
+            "analyze の出力ディレクトリ、metrics.json、キーポイントJSONのいずれでもよい。"
+            "イベントの指定は、投球を並べた順に対応する。"
+        ),
+    )
+    viewer.add_argument("pitch", nargs="+", help="投球（最大2つ）")
     viewer.add_argument("--output", help="出力HTML（既定は1つ目の隣の viewer.html）")
     viewer.add_argument("--title", help="見出し")
+    viewer.add_argument("--release", type=int, action="append", help="リリースのフレーム番号")
+    viewer.add_argument("--contact", type=int, action="append", help="足接地のフレーム番号")
+    viewer.add_argument("--start", type=int, action="append", help="解析区間の開始フレーム")
+    viewer.add_argument("--end", type=int, action="append", help="解析区間の終了フレーム")
+    viewer.add_argument("--hand", choices=("right", "left"), default="right", help="投げ手")
+    viewer.add_argument(
+        "--batter", choices=("right", "left"), default="left", help="画像上で打者がいる側"
+    )
+    viewer.add_argument("--fps", type=float, help="fps（省略時はキーポイントJSONの値）")
     viewer.set_defaults(handler=_handle_viewer)
 
     return parser
@@ -319,17 +340,50 @@ def _handle_compare(args) -> int:
 def _handle_viewer(args) -> int:
     from pitching.visualization.viewer import write_viewer
 
-    analyses = []
-    for target in args.pitch:
-        metrics_path = resolve_metrics_path(target)
-        analysis = load_analysis(metrics_path)
-        if analysis is None:
-            raise FileNotFoundError(
-                f"キーポイントJSONが見つかりません: {metrics_path.parent}"
-            )
-        analyses.append(analysis)
+    analyses = [_analysis_for_viewer(target, order, args) for order, target in enumerate(args.pitch)]
 
-    default = resolve_metrics_path(args.pitch[0]).parent / "viewer.html"
+    default = Path(args.pitch[0])
+    default = (default if default.is_dir() else default.parent) / "viewer.html"
     path = write_viewer(analyses, args.output or default, args.title)
     print(f"ビューアを書き出しました: {path}")
     return 0
+
+
+def _analysis_for_viewer(target: str, order: int, args):
+    """解析済みディレクトリでも、キーポイントJSON単体でも受け取れるようにする。"""
+    metrics_path, pose_path = resolve_input(target)
+
+    if metrics_path is not None:
+        analysis = load_analysis(metrics_path)
+        if analysis is not None:
+            return analysis
+
+    if pose_path is None:
+        raise FileNotFoundError(
+            f"キーポイントJSONが見つかりません: {target}\n"
+            "  analyze の出力ディレクトリか、pose.json / {動画名}_pose.json を指定してください"
+        )
+
+    series = load_pose_json(pose_path)
+    config = _pitch_config(
+        {
+            "pose": str(pose_path),
+            "release": _nth(args.release, order),
+            "contact": _nth(args.contact, order),
+            "start": _nth(args.start, order),
+            "end": _nth(args.end, order),
+        },
+        args,
+        default_fps=series.fps,
+        default_id=series.pitch_id,
+    )
+    return analyze_pitch(series, config)
+
+
+def _nth(values, order: int):
+    """並べた順に対応させる。1つだけ指定されたら全部に効かせる。"""
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return values[order] if order < len(values) else None

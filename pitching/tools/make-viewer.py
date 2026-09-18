@@ -1,68 +1,66 @@
 #!/usr/bin/env python3
 """棒人間ビューアの HTML を作る。
 
-    python tools/make-viewer.py output/good [output/bad] [-o output/viewer.html]
+    python tools/make-viewer.py output/good [output/bad] [-o viewer.html]
+    python tools/make-viewer.py clip_pose.json --release 152 --contact 140
 
-numpy などが要るので、依存を入れた python で実行すること
-（このリポジトリなら pitching/.venv/bin/python）。
+渡せるもの（混ぜてよい）:
+- analyze の出力ディレクトリ（metrics.json がある場所）
+- metrics.json そのもの
+- キーポイントJSON（track.py が書く {動画名}_pose.json、extract の pose.json）
 
-analyze が書いたディレクトリ（metrics.json とキーポイントJSONがある場所）を
-1つか2つ渡す。動画も再エンコードもせず、開いた瞬間から見られる HTML を1枚作る。
+キーポイントJSONだけを渡すときは、イベントをここで指定する。
+複数の投球に指定するときは、投球を並べた順に対応する（1つだけなら全部に効く）。
 
-できること:
-- 2投球の棒人間を、並べて / 重ねて 比較する
-- そろえ方を「進行率0〜100%」「リリース基準」「フレーム番号」から選ぶ
-- 連続フレームの差から、速度ベクトルと加速度ベクトル（力の向き）を重ねる
-
-file:// で開くのでサーバは要らない。
+`python -m pitching viewer` と中身は同じ。解析パッケージ（pitching/）が要るので、
+推論用コンテナで動かすならリポジトリの pitching/ をマウントするか、
+PITCHING_ROOT にその親ディレクトリを指定すること。
+キーポイントの抽出だけなら tools/extract-pose.py が単体で動く。
 """
 
 from __future__ import annotations
 
-import argparse
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# pitching パッケージの置き場所。環境ごとに変わるので順に試す。
+ROOT_CANDIDATES = (
+    os.environ.get("PITCHING_ROOT"),
+    str(Path(__file__).resolve().parents[2]),  # リポジトリを丸ごと置いた場合
+    "/",                                        # /pitching にマウントした場合
+)
 
-from pitching.reporting.loader import load_analysis, resolve_metrics_path  # noqa: E402
-from pitching.visualization.viewer import ViewerError, write_viewer  # noqa: E402
+
+def ensure_package_on_path() -> None:
+    """pitching を import できるようにする。できなければ理由を言って終わる。"""
+    for root in ROOT_CANDIDATES:
+        if root and (Path(root) / "pitching" / "__init__.py").is_file():
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            return
+
+    try:
+        import pitching  # noqa: F401  インストール済みならこれで足りる
+    except ImportError:
+        raise SystemExit(
+            "pitching パッケージが見つかりません。\n"
+            "  探した場所: " + ", ".join(str(r) for r in ROOT_CANDIDATES if r) + "\n"
+            "  対処: リポジトリの pitching/ をマウントして PITCHING_ROOT にその親を指定するか、\n"
+            "        ビューア作成は手元（解析環境）で実行してください。\n"
+            "        キーポイントの抽出だけなら tools/extract-pose.py が単体で動きます。"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="投球フォームの棒人間ビューアを作る")
-    parser.add_argument("pitch", nargs="+", help="analyze の出力ディレクトリ（最大2つ）")
-    parser.add_argument("-o", "--output", help="出力HTML（既定は1つ目の隣の viewer.html）")
-    parser.add_argument("--title", help="見出し")
-    args = parser.parse_args(argv)
+    ensure_package_on_path()
 
-    if len(args.pitch) > 2:
-        print("エラー: 比較できるのは2投球までです", file=sys.stderr)
-        return 1
+    from pitching.cli import main as cli_main
 
-    analyses = []
-    for target in args.pitch:
-        metrics_path = resolve_metrics_path(target)
-        analysis = load_analysis(metrics_path)
-        if analysis is None:
-            print(
-                f"エラー: キーポイントJSON（pose_raw.json / pose.json）が見つかりません: "
-                f"{metrics_path.parent}",
-                file=sys.stderr,
-            )
-            return 1
-        analyses.append(analysis)
-
-    output = Path(args.output) if args.output else resolve_metrics_path(args.pitch[0]).parent / "viewer.html"
-    try:
-        path = write_viewer(analyses, output, args.title)
-    except (ViewerError, ValueError, FileNotFoundError) as error:
-        print(f"エラー: {error}", file=sys.stderr)
-        return 1
-
-    print(f"ビューアを書き出しました: {path}")
-    print("  ブラウザで開いてください（サーバ不要）")
-    return 0
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    # -o を CLI 側の --output に合わせる
+    arguments = ["--output" if item == "-o" else item for item in arguments]
+    return cli_main(["viewer", *arguments])
 
 
 if __name__ == "__main__":

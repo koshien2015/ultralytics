@@ -109,17 +109,21 @@ python -m pitching run --output output/compare \
 
 **`track.py` を使わずに抽出だけしたいとき**は `tools/extract-pose.py` を使う。
 この1ファイルと `shared/pose.py` だけで動き、pydantic も matplotlib も import しない。
-`docker/docker-compose.yml` は `../pitching/tools` を読み取り専用で入れてある。
+`docker/docker-compose.yml` は `../pitching` を読み取り専用で入れてある。
 
 ```bash
 docker compose -f docker/docker-compose.yml exec yolov8 \
-  python /pitching-tools/extract-pose.py /shared/input/a.mov \
-    -o /shared/out/a.pose.json \
+  python /pitching/tools/extract-pose.py /shared/input/a.mov \
+    -o /shared/out/a_pose.json \
     --start 100 --end 180 \
     --detection-model /shared/yolo8m_20250510.pt
 ```
 
 `shared/pose.py` の場所が違うときは `--shared-dir` か環境変数 `PITCHING_SHARED_DIR` で指定する。
+
+**解析とビューアはコンテナ側では動かないことがある。** `pitching` パッケージ本体は
+pydantic を使うので、素の推論コンテナには入っていない（`pip install pydantic` で足りる）。
+入れない場合は、pose.json を手元に持ち帰ってから `run` / `viewer` を実行する。
 
 `--pose` を使うと推論は一切走らないので、イベントのフレーム番号を直しながら
 何度でも解析し直せる。
@@ -164,10 +168,19 @@ python pitching/examples/generate_sample_pose.py output/sample
 ## 棒人間ビューア
 
 ```bash
+# analyze の出力ディレクトリから
 python -m pitching viewer output/good output/bad --output output/viewer.html
+
+# track.py が書いた {動画名}_pose.json から直接（イベントはここで指定する）
+python -m pitching viewer shared/a_pose.json --release 152 --contact 140 \
+  --hand right --batter right --output output/viewer.html
+
 # 同じものが単体スクリプトからも作れる（依存が入った python で実行すること）
 pitching/.venv/bin/python pitching/tools/make-viewer.py output/good output/bad -o output/viewer.html
 ```
+
+渡せるのは「analyze の出力ディレクトリ」「metrics.json」「キーポイントJSON」のいずれでもよい。
+`--release` などを2投球に指定するときは、投球を並べた順に対応する（1つだけなら両方に効く）。
 
 キーポイントを線で結んだ棒人間を描く HTML を1枚だけ作る。データは HTML に埋め込むので、
 `file://` で開けばよくサーバは要らない。元動画も再エンコードもしない。

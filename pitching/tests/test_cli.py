@@ -117,3 +117,44 @@ def test_viewer_reports_missing_pose_file(tmp_path, capsys):
 
     assert main(["viewer", str(tmp_path)]) == 1
     assert "キーポイントJSON" in capsys.readouterr().err
+
+
+def test_viewer_accepts_a_track_style_pose_file(tmp_path):
+    """track.py が書く {動画名}_pose.json を直接渡せる。"""
+    series = make_series(GOOD_ANGLES, start=100)
+    series.pitch_id = "clip"
+    save_pose_json(series, tmp_path / "clip_pose.json")
+
+    assert main([
+        "viewer", str(tmp_path / "clip_pose.json"),
+        "--release", "116", "--contact", "104",
+        "--output", str(tmp_path / "viewer.html"),
+    ]) == 0
+    assert "clip" in (tmp_path / "viewer.html").read_text(encoding="utf-8")
+
+
+def test_viewer_finds_a_pose_file_in_a_directory(tmp_path):
+    """ディレクトリを渡しても {動画名}_pose.json を拾う。"""
+    save_pose_json(make_series(GOOD_ANGLES, start=100), tmp_path / "clip_pose.json")
+
+    assert main(["viewer", str(tmp_path), "--output", str(tmp_path / "v.html")]) == 0
+
+
+def test_viewer_events_follow_the_order_of_the_pitches(tmp_path):
+    for name in ("a", "b"):
+        save_pose_json(make_series(GOOD_ANGLES, start=100), tmp_path / f"{name}_pose.json")
+
+    assert main([
+        "viewer", str(tmp_path / "a_pose.json"), str(tmp_path / "b_pose.json"),
+        "--release", "116", "--release", "113",
+        "--output", str(tmp_path / "v.html"),
+    ]) == 0
+
+    payload = (tmp_path / "v.html").read_text(encoding="utf-8")
+    assert '"release": {"frame": 116' in payload.replace("\n", "")
+    assert '"release": {"frame": 113' in payload.replace("\n", "")
+
+
+def test_viewer_reports_a_missing_pose_file_clearly(tmp_path, capsys):
+    assert main(["viewer", str(tmp_path)]) == 1
+    assert "キーポイントJSONが見つかりません" in capsys.readouterr().err

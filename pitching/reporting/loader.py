@@ -15,6 +15,8 @@ from pitching.reporting.summary import config_from_summary
 
 # 探す順。analyze が書いたものを優先し、無ければ extract が書いたものを使う。
 POSE_FILENAMES = ("pose_raw.json", "pose.json")
+# track.py は {動画名}_pose.json の名前で書く。固定名だけを探すと見つけられない。
+POSE_PATTERNS = ("*_pose.json", "*.pose.json")
 
 
 def load_summary(path: str | Path) -> dict:
@@ -29,11 +31,48 @@ def load_summary(path: str | Path) -> dict:
 
 
 def find_pose_file(directory: str | Path) -> Path | None:
+    """ディレクトリからキーポイントJSONを1つ選ぶ。
+
+    固定名（analyze / extract の出力）を優先し、無ければ track.py が書く
+    {動画名}_pose.json を探す。複数あれば名前順の先頭。
+    """
+    folder = Path(directory)
     for filename in POSE_FILENAMES:
-        candidate = Path(directory) / filename
+        candidate = folder / filename
         if candidate.is_file():
             return candidate
+    for pattern in POSE_PATTERNS:
+        matches = sorted(folder.glob(pattern))
+        if matches:
+            return matches[0]
     return None
+
+
+def is_pose_file(path: str | Path) -> bool:
+    """キーポイントJSONか（metrics.json ではないか）を中身で判定する。"""
+    target = Path(path)
+    if not target.is_file():
+        return False
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and "frames" in payload
+
+
+def resolve_input(target: str | Path) -> tuple[Path | None, Path | None]:
+    """指定された場所から (metrics.json, キーポイントJSON) を見つける。
+
+    ディレクトリでも、metrics.json でも、キーポイントJSONそのものでも受け取れる。
+    どちらか一方しか無いこともある（track.py の出力にはまだ metrics.json が無い）。
+    """
+    path = Path(target)
+    if path.is_dir():
+        metrics = path / "metrics.json"
+        return (metrics if metrics.is_file() else None), find_pose_file(path)
+    if is_pose_file(path):
+        return None, path
+    return (path if path.is_file() else None), find_pose_file(path.parent)
 
 
 def load_analysis(metrics_path: str | Path) -> PitchAnalysis | None:
