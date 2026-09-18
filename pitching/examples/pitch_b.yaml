@@ -1,6 +1,7 @@
-# 良かった投球の設定例
-pitch_id: bad_001
-video_path: input/bad.mp4
+# 投球1つ分の設定。もう1球は pitch_a.yaml。
+# ラベルは良否の分類ではなく、ただの覚え書き。
+pitch_id: pitch_b
+video_path: input/b.mp4
 throwing_hand: right
 # 画像上で打者がどちら側にいるか。前腕角度の符号（打者方向に対して上向き何度）に必要。
 batter_direction: left
@@ -14,7 +15,7 @@ events:
   release_frame: 149
 
 result:
-  label: bad
+  label: "2球目"
   description: "高く抜けた"
 
 # 以下は省略可能（既定値で動く）

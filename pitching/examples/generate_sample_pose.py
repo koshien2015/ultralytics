@@ -3,10 +3,10 @@
 
     python examples/generate_sample_pose.py output/sample
 
-good / bad の2投球分の pose.json と config.yaml を作る。
+2投球分の pose.json と config.yaml を作る。
 本物の投球ではないので、数値の大小に意味は無い。動作確認と画面の確認用。
 
-bad は「肘が伸びきる前にリリースした」想定で、リリースを3フレーム早めてある。
+2球目はリリースを3フレーム早めてあり、肘が伸びきる前に離す形になる。
 """
 
 from __future__ import annotations
@@ -26,7 +26,11 @@ FPS = 60.0
 START_FRAME = 100
 FRAMES = 40
 FOOT_CONTACT_FRAME = START_FRAME + 12
-RELEASE_FRAMES = {"good": START_FRAME + 30, "bad": START_FRAME + 27}
+# 名前 → (リリースのフレーム, 覚え書き)。良否の分類ではない。
+PITCHES = {
+    "sample_01": (START_FRAME + 30, "リリース遅め"),
+    "sample_02": (START_FRAME + 27, "リリース早め"),
+}
 
 # 画面上のおおよその寸法（ピクセル）。打者は画像の左にいる想定。
 HIP_WIDTH = 30.0
@@ -129,9 +133,8 @@ def main(argv: list[str]) -> int:
         return 1
 
     root = Path(argv[1])
-    for label, release_frame in RELEASE_FRAMES.items():
-        directory = root / label
-        pitch_id = f"sample_{label}"
+    for pitch_id, (release_frame, label) in PITCHES.items():
+        directory = root / pitch_id
         save_pose_json(build_series(pitch_id), directory / "pose.json")
         (directory / "config.yaml").write_text(
             yaml.safe_dump(
@@ -143,12 +146,15 @@ def main(argv: list[str]) -> int:
         )
         print(f"{directory}: pose.json / config.yaml")
 
-    print("次はこれ:")
-    print(f"  python -m pitching analyze --pose-data {root}/good/pose.json "
-          f"--config {root}/good/config.yaml --output {root}/good")
-    print(f"  python -m pitching analyze --pose-data {root}/bad/pose.json "
-          f"--config {root}/bad/config.yaml --output {root}/bad")
-    print(f"  python -m pitching viewer {root}/good {root}/bad --output {root}/viewer.html")
+    names = list(PITCHES)
+    print("次はこれ（抽出済みなので run は推論を飛ばす）:")
+    print(f"  python -m pitching run --output {root} \\")
+    for name in names:
+        release, _ = PITCHES[name]
+        print(f"    --video {name}.mp4 --id {name} --release {release} "
+              f"--contact {FOOT_CONTACT_FRAME} --start {START_FRAME} "
+              f"--end {START_FRAME + FRAMES - 1} \\")
+    print("    --hand right --batter left")
     return 0
 
 

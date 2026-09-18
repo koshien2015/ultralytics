@@ -82,7 +82,7 @@ def _grab(cv2, analysis: PitchAnalysis, event_name: EventName, draw: bool):
             )
 
     caption = (
-        f"{analysis.pitch_id} [{analysis.config.result.label}] "
+        f"{analysis.config.display_name} "
         f"{event_name.value} f{event.frame_index} ({event.source.value})"
     )
     cv2.putText(

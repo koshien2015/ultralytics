@@ -98,7 +98,7 @@ def config_from_summary(summary: dict) -> "PitchConfig":
                 "stride_foot_contact_frame": events.get("foot_contact", {}).get("frame"),
                 "release_frame": events.get("release", {}).get("frame"),
             },
-            "result": summary.get("result", {"label": "unlabeled", "description": ""}),
+            "result": summary.get("result", {"label": "", "description": ""}),
             **{key: value for key, value in settings.items() if value},
         }
     )

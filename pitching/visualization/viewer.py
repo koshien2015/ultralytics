@@ -78,6 +78,7 @@ def _pitch_payload(analysis: PitchAnalysis) -> dict:
     return {
         "pitch_id": config.pitch_id,
         "label": config.result.label,
+        "display_name": config.display_name,
         "description": config.result.description,
         "fps": config.fps,
         "throwing_hand": config.throwing_hand.value,
@@ -225,7 +226,7 @@ def render_html(analyses: list[PitchAnalysis], title: str | None = None) -> str:
     payload = build_payload(analyses)
     heading = title or " vs ".join(analysis.pitch_id for analysis in analyses)
     meta = " / ".join(
-        f"{analysis.pitch_id}［{analysis.config.result.label}］"
+        f"{analysis.config.display_name} "
         f"{analysis.frame_indices.size}フレーム "
         f"{analysis.config.fps:g}fps "
         f"{analysis.config.throwing_hand.value}投げ "

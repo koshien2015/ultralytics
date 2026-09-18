@@ -344,11 +344,11 @@ function layoutCanvases() {
   ui.canvases.innerHTML = '';
   if (ui.layout.value === 'overlay') {
     const legend = PITCHES.map((p, i) =>
-      `<span style="color:${COLORS[i]}">■ ${p.pitch_id}（${p.label}）</span>`).join('　');
+      `<span style="color:${COLORS[i]}">■ ${p.display_name}</span>`).join('　');
     canvases = [{ canvas: makeCanvas(legend, null, true), pitches: PITCHES.map((p, i) => i) }];
   } else {
     canvases = PITCHES.map((pitch, index) => ({
-      canvas: makeCanvas(`${pitch.pitch_id}（${pitch.label}）`, COLORS[index]),
+      canvas: makeCanvas(pitch.display_name, COLORS[index]),
       pitches: [index],
     }));
   }

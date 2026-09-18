@@ -178,3 +178,23 @@ def test_charts_are_written(tmp_path, pitch_series, pitch_config):
 
     assert written
     assert all(path.is_file() for path in written)
+
+
+def test_japanese_font_selection_is_safe():
+    """日本語フォントが有っても無くても落ちない。"""
+    from pitching.visualization import charts
+
+    name = charts.use_japanese_font()
+
+    assert name is None or isinstance(name, str)
+
+
+def test_chart_legend_uses_the_display_name(tmp_path, pitch_series, pitch_config):
+    from pitching.visualization import charts
+
+    config = pitch_config.model_copy(deep=True)
+    config.result.label = "1球目"
+    analysis = analyze_pitch(pitch_series, config)
+
+    assert analysis.config.display_name == "synthetic_good (1球目)"
+    assert charts.write_pitch_charts(analysis, tmp_path)

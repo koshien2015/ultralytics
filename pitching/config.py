@@ -24,9 +24,12 @@ class EventConfig(BaseModel):
 
 
 class ResultConfig(BaseModel):
-    """投球の結果ラベル。解析には使わず、出力の見出しに使う。"""
+    """投球に付ける覚え書き。解析には一切使わず、出力の見出しにだけ出る。
 
-    label: str = "unlabeled"
+    良否の分類ではない。"1球目" でも "58km/h" でも、区別が付けば何でもよい。
+    """
+
+    label: str = ""
     description: str = ""
 
     model_config = {"extra": "forbid", "validate_assignment": True}
@@ -120,6 +123,15 @@ class PitchConfig(BaseModel):
     @property
     def manual_event_source(self) -> EventSource:
         return EventSource.MANUAL
+
+    @property
+    def display_name(self) -> str:
+        """画面や凡例に出す名前。覚え書きが無ければ pitch_id だけ。
+
+        括弧は半角にする。Matplotlib の既定フォントに全角括弧が無く、
+        グラフの凡例で豆腐になるため。
+        """
+        return f"{self.pitch_id} ({self.result.label})" if self.result.label else self.pitch_id
 
     def side_prefix(self, throwing: bool = True) -> str:
         """投球腕側 / 非投球腕側のキーポイント接頭辞。"""

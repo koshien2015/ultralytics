@@ -1,9 +1,10 @@
 # pitching — 投球フォーム解析
 
 YOLO Pose のキーポイント時系列から関節角度・位置・タイミングを数値化し、
-同一投手の2球（例: 良かった球と悪かった球）のフォームを比較する。
+同一投手の2球のフォームを比較する。
 
 **フォームの良否は判定しない。** 出すのは観測値と、比較のための差分だけ。
+投球に付ける `label` も良否の分類ではなく、"1球目" のような区別のための覚え書き。
 
 ## 何が分かるか
 
@@ -31,6 +32,7 @@ pitching/
   comparison/            同期（時間正規化・イベント基準）と比較
   reporting/             JSON / CSV 出力
   visualization/         グラフ・解析動画・比較画像・棒人間ビューア
+  pipeline.py            run（抽出→解析→比較→ビューア）の段取り
   cli.py                 CLI
   tools/make-viewer.py   ビューア生成スクリプト（単体で実行できる）
   examples/              設定例と、動画なしで試すための合成データ生成
@@ -43,39 +45,64 @@ pitching/
 
 ## 実行方法
 
+### いちばん短い手順
+
+`run` は 抽出 → 解析 → 比較 → ビューア をまとめて実行する。
+
 ```bash
 cd ultralytics   # パッケージルート
 
+python -m pitching run --output output/compare \
+  --video input/a.mov --release 152 --contact 140 --start 100 --end 180 \
+  --video input/b.mov --release 160 --contact 148 --start 110 --end 190 \
+  --hand right --batter left \
+  --detection-model shared/yolo8m_20250510.pt
+```
+
+イベントの指定（`--release` など）は**直前の `--video` に付く**。
+`--id` を省くと動画のファイル名が投球名になる。1球だけ渡せば比較なしで解析とビューアを作る。
+
+出力は `output/compare/<投球名>/`（metrics.json・CSV・グラフ）、
+`output/compare/comparison/`、`output/compare/viewer.html`。
+
+推論をやり直すと時間がかかるので、`<投球名>/pose.json` があれば既定で使い回す。
+取り直すときは `--force-extract`。
+
+主なオプション: `--config <yaml>`（直前の `--video` の設定を YAML で渡す。
+コマンドラインの指定が優先）/ `--label`（覚え書き）/ `--no-charts` / `--no-viewer` /
+`--overlay-video` / `--fps` / `--pose-model`。
+
+### 段階ごとに実行する
+
+途中結果を差し替えたいときは個別に呼ぶ。`run` と結果は同じ。
+
+```bash
 # 1. 動画から YOLO Pose のキーポイントを抽出（GPU 推奨、ultralytics が必要）
 python -m pitching extract \
-  --video input/good.mp4 \
-  --config pitching/examples/good.yaml \
-  --output output/good
+  --video input/a.mov \
+  --config pitching/examples/pitch_a.yaml \
+  --output output/a
 
 # 2. 解析（動画も YOLO も不要。pose.json だけで動く）
 python -m pitching analyze \
-  --pose-data output/good/pose.json \
-  --config pitching/examples/good.yaml \
-  --output output/good
+  --pose-data output/a/pose.json \
+  --config pitching/examples/pitch_a.yaml \
+  --output output/a
 
 # 3. 2球を比較
 python -m pitching compare \
-  --pitch-a output/good/metrics.json \
-  --pitch-b output/bad/metrics.json \
+  --pitch-a output/a/metrics.json \
+  --pitch-b output/b/metrics.json \
   --output output/comparison
 
 # 4. 棒人間ビューア（HTML 1枚。サーバ不要、ブラウザで開くだけ）
-python -m pitching viewer output/good output/bad --output output/viewer.html
+python -m pitching viewer output/a output/b --output output/viewer.html
 ```
 
-主なオプション:
+`analyze --overlay-video` で解析動画、`compare --frames` で同一イベントの比較画像も出る。
 
-- `analyze --overlay-video` … 骨格・肘角度・前腕角度・イベント名を重ねた動画を出す
-- `analyze --no-charts` … グラフを出さない
-- `compare --frames` … 足接地・最大肘屈曲・リリースの同一イベント比較画像を出す
-
-実動画が無い場合は、合成データで一通り試せる。good / bad の2投球分の
-`pose.json` と `config.yaml` が作られ、続けて打つコマンドも表示される。
+実動画が無い場合は、合成データで一通り試せる。2投球分の `pose.json` と `config.yaml` が
+作られ、続けて打つ `run` のコマンドも表示される。
 
 ```bash
 python pitching/examples/generate_sample_pose.py output/sample
@@ -117,11 +144,13 @@ Xは打者方向が正、Yは上が正。撮影距離も左右の向きも違う
 
 ## 入力
 
-### 設定 YAML（`examples/good.yaml`）
+### 設定 YAML（`examples/pitch_a.yaml`）
+
+`run` にコマンドラインで渡すなら不要。細かく詰めるときだけ使う。
 
 ```yaml
-pitch_id: good_001
-video_path: input/good.mp4
+pitch_id: pitch_a
+video_path: input/a.mov
 throwing_hand: right
 batter_direction: left    # 画像上で打者がどちら側にいるか
 fps: 60
@@ -133,7 +162,7 @@ events:
   release_frame: 152
 
 result:
-  label: good
+  label: "1球目"          # 良否の分類ではなく、区別のための覚え書き
   description: "縦回転58km/h"
 ```
 
@@ -182,7 +211,9 @@ CSV は目視確認用（座標は小数3桁に丸めて書く）。読み込み
 
 `viewer` が作るもの: `viewer.html` 1枚（データ埋め込み済み）。
 
-グラフ内のラベルは英語。日本語フォントが無い環境で豆腐になるのを避けるため。
+グラフの軸名・表題は英語（日本語フォントが無い環境で豆腐になるのを避けるため）。
+投球名と覚え書きは日本語のまま出す。日本語フォント（Hiragino Sans / Noto Sans CJK JP など）が
+見つからない環境では、その部分だけ表示できない。
 
 ## 座標と角度の約束事
 

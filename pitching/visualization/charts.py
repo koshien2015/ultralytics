@@ -1,7 +1,11 @@
 """Matplotlib によるグラフ生成。
 
-グラフ内のラベルは英語にしている。日本語フォントが入っていない環境では
-豆腐（□）になり、かえって読めなくなるため。
+軸名や表題は英語にしている。日本語フォントが無い環境で豆腐（□）になり、
+かえって読めなくなるため。
+
+ただし投球名と覚え書きは利用者が付けるもので日本語が入りうるので、
+日本語フォントが見つかれば使う。見つからなければ一度だけ知らせて、
+以降の警告は黙らせる（同じ警告が1文字ごとに出て他が埋もれるため）。
 """
 
 from __future__ import annotations
@@ -16,6 +20,30 @@ import matplotlib.pyplot as plt  # noqa: E402  バックエンド指定後に im
 from pitching.analysis import PitchAnalysis  # noqa: E402
 from pitching.comparison.alignment import time_normalize  # noqa: E402
 from pitching.models import EventName  # noqa: E402
+
+# 日本語が出せるフォントの候補。先に見つかったものを使う。
+JAPANESE_FONTS = (
+    "Hiragino Sans", "Hiragino Maru Gothic Pro", "Noto Sans CJK JP", "Noto Sans JP",
+    "IPAexGothic", "IPAGothic", "Yu Gothic", "Meiryo", "MS Gothic", "Arial Unicode MS",
+)
+
+def use_japanese_font() -> str | None:
+    """日本語を出せるフォントを選ぶ。無ければ None を返し、警告を黙らせる。"""
+    from matplotlib import font_manager
+
+    available = {font.name for font in font_manager.fontManager.ttflist}
+    for name in JAPANESE_FONTS:
+        if name in available:
+            matplotlib.rcParams["font.family"] = [name, "DejaVu Sans"]
+            return name
+
+    import warnings
+
+    warnings.filterwarnings("ignore", message="Glyph .* missing from font")
+    return None
+
+
+_JAPANESE_FONT = use_japanese_font()
 
 # 縦線で示すイベントと色
 EVENT_STYLE = {
@@ -125,7 +153,7 @@ def plot_normalized(
 
     for order, analysis in enumerate(analyses):
         normalized = time_normalize(analysis, key)
-        label = f"{analysis.pitch_id} ({analysis.config.result.label})"
+        label = analysis.config.display_name
         if not normalized.covered:
             label = f"{label} [not aligned]"
         axes.plot(
