@@ -92,3 +92,28 @@ def test_analyze_warns_about_unresolved_events(tmp_path, capsys):
     assert main(["analyze", "--pose-data", str(pose_path), "--config", str(config_path),
                  "--output", str(tmp_path), "--no-charts"]) == 0
     assert "未確定のイベント: release" in capsys.readouterr().out
+
+
+def test_viewer_subcommand_writes_html(tmp_path):
+    good_dir = tmp_path / "good"
+    bad_dir = tmp_path / "bad"
+    good_pose, good_config = write_inputs(good_dir, "sample_good", 116, "good")
+    bad_pose, bad_config = write_inputs(bad_dir, "sample_bad", 113, "bad")
+    main(["analyze", "--pose-data", str(good_pose), "--config", str(good_config),
+          "--output", str(good_dir), "--no-charts"])
+    main(["analyze", "--pose-data", str(bad_pose), "--config", str(bad_config),
+          "--output", str(bad_dir), "--no-charts"])
+
+    assert main(["viewer", str(good_dir), str(bad_dir),
+                 "--output", str(tmp_path / "viewer.html")]) == 0
+
+    html = (tmp_path / "viewer.html").read_text(encoding="utf-8")
+    assert "sample_good" in html and "sample_bad" in html
+
+
+def test_viewer_reports_missing_pose_file(tmp_path, capsys):
+    """metrics.json だけではビューアは作れない。"""
+    (tmp_path / "metrics.json").write_text("{}", encoding="utf-8")
+
+    assert main(["viewer", str(tmp_path)]) == 1
+    assert "キーポイントJSON" in capsys.readouterr().err

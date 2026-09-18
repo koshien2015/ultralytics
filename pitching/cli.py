@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from pitching.adapters.json_adapter import load_pose_json, save_pose_csv, save_p
 from pitching.analysis import analyze_pitch
 from pitching.comparison.comparator import compare_summaries
 from pitching.config import load_pitch_config
-from pitching.reporting.summary import config_from_summary
+from pitching.reporting.loader import load_analysis, load_summary, resolve_metrics_path
 from pitching.reporting.writers import write_analysis, write_comparison
 from pitching.visualization import charts
 
@@ -63,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--frames", action="store_true", help="同一イベントの比較画像も出力する（動画が必要）"
     )
     compare.set_defaults(handler=_handle_compare)
+
+    viewer = subparsers.add_parser("viewer", help="棒人間ビューアのHTMLを作る")
+    viewer.add_argument("pitch", nargs="+", help="analyze の出力ディレクトリ（最大2つ）")
+    viewer.add_argument("--output", help="出力HTML（既定は1つ目の隣の viewer.html）")
+    viewer.add_argument("--title", help="見出し")
+    viewer.set_defaults(handler=_handle_viewer)
 
     return parser
 
@@ -113,15 +118,15 @@ def _handle_analyze(args) -> int:
 
 
 def _handle_compare(args) -> int:
-    summary_a = _load_summary(args.pitch_a)
-    summary_b = _load_summary(args.pitch_b)
+    summary_a = load_summary(resolve_metrics_path(args.pitch_a))
+    summary_b = load_summary(resolve_metrics_path(args.pitch_b))
     report = compare_summaries(summary_a, summary_b)
 
     written = write_comparison(report, args.output)
 
     if not args.no_charts or args.frames:
-        analysis_a = _rebuild_analysis(args.pitch_a, summary_a)
-        analysis_b = _rebuild_analysis(args.pitch_b, summary_b)
+        analysis_a = load_analysis(resolve_metrics_path(args.pitch_a))
+        analysis_b = load_analysis(resolve_metrics_path(args.pitch_b))
         if analysis_a is None or analysis_b is None:
             print(
                 "警告: pose_raw.json が見つからないためグラフ・比較画像は出力しません",
@@ -143,24 +148,20 @@ def _handle_compare(args) -> int:
     return 0
 
 
-def _load_summary(path: str) -> dict:
-    summary_path = Path(path)
-    try:
-        return json.loads(summary_path.read_text(encoding="utf-8"))
-    except FileNotFoundError as error:
-        raise FileNotFoundError(f"metrics.json が見つかりません: {summary_path}") from error
-    except json.JSONDecodeError as error:
-        raise ValueError(f"metrics.json が不正です: {summary_path}: {error}") from error
+def _handle_viewer(args) -> int:
+    from pitching.visualization.viewer import write_viewer
 
+    analyses = []
+    for target in args.pitch:
+        metrics_path = resolve_metrics_path(target)
+        analysis = load_analysis(metrics_path)
+        if analysis is None:
+            raise FileNotFoundError(
+                f"キーポイントJSONが見つかりません: {metrics_path.parent}"
+            )
+        analyses.append(analysis)
 
-def _rebuild_analysis(metrics_path: str, summary: dict):
-    """metrics.json の隣のキーポイントJSONから解析をやり直す（比較グラフ用）。
-
-    analyze が書いた pose_raw.json を優先し、無ければ extract が書いた pose.json を使う。
-    """
-    directory = Path(metrics_path).parent
-    for filename in ("pose_raw.json", "pose.json"):
-        pose_path = directory / filename
-        if pose_path.is_file():
-            return analyze_pitch(load_pose_json(pose_path), config_from_summary(summary))
-    return None
+    default = resolve_metrics_path(args.pitch[0]).parent / "viewer.html"
+    path = write_viewer(analyses, args.output or default, args.title)
+    print(f"ビューアを書き出しました: {path}")
+    return 0

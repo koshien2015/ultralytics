@@ -30,8 +30,9 @@ pitching/
   events/                イベント検出とリリース供給元インターフェース
   comparison/            同期（時間正規化・イベント基準）と比較
   reporting/             JSON / CSV 出力
-  visualization/         グラフ・解析動画・比較画像
+  visualization/         グラフ・解析動画・比較画像・棒人間ビューア
   cli.py                 CLI
+  tools/make-viewer.py   ビューア生成スクリプト（単体で実行できる）
   examples/              設定例と、動画なしで試すための合成データ生成
   tests/                 合成座標による単体テスト（実動画・GPU 不要）
 ```
@@ -62,6 +63,9 @@ python -m pitching compare \
   --pitch-a output/good/metrics.json \
   --pitch-b output/bad/metrics.json \
   --output output/comparison
+
+# 4. 棒人間ビューア（HTML 1枚。サーバ不要、ブラウザで開くだけ）
+python -m pitching viewer output/good output/bad --output output/viewer.html
 ```
 
 主なオプション:
@@ -70,11 +74,46 @@ python -m pitching compare \
 - `analyze --no-charts` … グラフを出さない
 - `compare --frames` … 足接地・最大肘屈曲・リリースの同一イベント比較画像を出す
 
-実動画が無い場合は、合成データで一通り試せる。
+実動画が無い場合は、合成データで一通り試せる。good / bad の2投球分の
+`pose.json` と `config.yaml` が作られ、続けて打つコマンドも表示される。
 
 ```bash
 python pitching/examples/generate_sample_pose.py output/sample
 ```
+
+## 棒人間ビューア
+
+```bash
+python -m pitching viewer output/good output/bad --output output/viewer.html
+# 同じものが単体スクリプトからも作れる（依存が入った python で実行すること）
+pitching/.venv/bin/python pitching/tools/make-viewer.py output/good output/bad -o output/viewer.html
+```
+
+キーポイントを線で結んだ棒人間を描く HTML を1枚だけ作る。データは HTML に埋め込むので、
+`file://` で開けばよくサーバは要らない。元動画も再エンコードもしない。
+
+**2投球の比較**
+
+- 表示: 並べて / 重ねて
+- そろえ方: 進行率0〜100%（足接地〜リリースを引き伸ばす）/ リリース基準 / フレーム番号
+- 再生・コマ送り（←→キー、スペースで再生）、投球腕の軌跡
+- 右の表に、その時点の肘角度・前腕角度・体幹傾き・前脚膝角度と、2球の差
+
+**力の向きと大きさ**
+
+連続フレームの差分をベクトルとして関節に重ねる。対象は 全関節 / 投球腕 / 単一関節。
+
+| 表示 | 計算 | 意味 |
+|---|---|---|
+| 速度 | 連続2フレームの変位 | どちらへどれだけ動いたか |
+| 加速度 | 3フレームの2階差分 | **向きが力の向きに相当**（F = ma） |
+
+> 矢印は力そのものではない。質量が不明なので大きさはニュートンではなく「身体長/秒²」の相対値。
+> また2D画像から得た見かけの動きなので、奥行き方向の成分は含まれない。
+> 突出した値で画面が埋まらないよう、矢印の長さには上限がある（頭打ちの矢印は先端を白く縁取る）。
+
+座標は身体サイズを1とした相対値で、原点は足接地時の股関節中点、
+Xは打者方向が正、Yは上が正。撮影距離も左右の向きも違う2投球を同じ土俵に載せるため。
 
 ## 入力
 
@@ -140,6 +179,8 @@ CSV は目視確認用（座標は小数3桁に丸めて書く）。読み込み
 
 `compare --output <dir>` が作るもの: `comparison.json` / `comparison.csv` /
 `charts/compare_*.png`（時間正規化して重ねたグラフ）/ `frames/compare_*.png`。
+
+`viewer` が作るもの: `viewer.html` 1枚（データ埋め込み済み）。
 
 グラフ内のラベルは英語。日本語フォントが無い環境で豆腐になるのを避けるため。
 
