@@ -14,6 +14,17 @@ from pitching.analysis import PitchAnalysis
 from pitching.models import EventName
 from pitching.visualization.skeleton import SKELETON_EDGES, throwing_arm_edges
 
+# ブラウザで再生できる形式。**ここを変えると、どのブラウザでも見られなくなりうる。**
+#
+# 以前は "mp4v"（MPEG-4 Part 2）だった。デスクトップの QuickTime / VLC では
+# 再生できるので気づきにくいが、**HTML5 video はどのブラウザも対応していない**。
+# 共通ビューアへ載せるまで表面化しなかった。
+#
+# コンテナも .mp4 にする。実データの元動画は ftyp が "qt  "（QuickTime）で、
+# Chrome / Edge / Firefox は ISO-BMFF しか受けない——コーデック以前に弾かれる。
+BROWSER_FOURCC = "avc1"     # H.264
+BROWSER_SUFFIX = ".mp4"
+
 SKELETON_COLOR = (200, 200, 200)
 THROWING_ARM_COLOR = (0, 200, 255)
 WARNING_COLOR = (0, 0, 255)
@@ -79,11 +90,33 @@ def render_overlay_video(
 
 
 def _open_writer(cv2, path: Path, image, fps: float):
+    """ブラウザで再生できる形式で書き出し先を開く。
+
+    **OpenCV の avc1 対応はビルド依存。** 開けなかったときに黙って
+    別の形式へ落とさない——落とすと、ファイルはできるのにビューアで
+    再生できない、という気づきにくい状態になる。理由を言って止める。
+    """
+    if path.suffix.lower() != BROWSER_SUFFIX:
+        # avc1 で書いても、拡張子が .mov のままではコンテナの申告が食い違う。
+        # Chrome / Edge / Firefox は ISO-BMFF しか受けないので、
+        # 中身が H.264 でも再生できないことがある。
+        raise OverlayError(
+            f"出力先の拡張子は {BROWSER_SUFFIX} にしてください: {path}\n"
+            "ブラウザで再生するため、コンテナも ISO-BMFF に揃える必要があります。"
+        )
+
     height, width = image.shape[:2]
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*BROWSER_FOURCC)
     writer = cv2.VideoWriter(str(path), fourcc, fps, (width, height))
     if not writer.isOpened():
-        raise OverlayError(f"出力動画を作成できません: {path}")
+        raise OverlayError(
+            f"出力動画を作成できません: {path}\n"
+            f"この OpenCV は {BROWSER_FOURCC}（H.264）で書き出せません。"
+            "ffmpeg 入りの opencv-python を入れるか、一度可逆形式で書いてから "
+            "ffmpeg -c:v libx264 で変換してください。"
+            "他の形式（mp4v など）へ落とすとブラウザで再生できなくなるため、"
+            "ここでは自動で切り替えません。"
+        )
     return writer
 
 
