@@ -23,6 +23,7 @@ import json
 import math
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -118,8 +119,15 @@ def extract(args) -> dict:
 
     frames = []
     modes = set()
-    frame_index = args.start
     capture.set(cv2.CAP_PROP_POS_FRAMES, args.start)
+    # **シークの着地点を読み戻す。** 長尺 HEVC では要求フレームではなく
+    # キーフレームへ着地することがある。要求値をそのまま先頭の番号にすると、
+    # 全フレームが一定量ずれたまま、警告もなく出力される。骨格が数フレーム
+    # ずれて重なるのは「それらしく見えて間違っている」最悪の壊れ方なので、
+    # 実際に着地した位置を番号の基準にし、要求値との差も記録して持ち帰る。
+    landing = capture.get(cv2.CAP_PROP_POS_FRAMES)
+    seek_landing = int(landing) if landing is not None and landing >= 0 else args.start
+    frame_index = seek_landing
 
     try:
         while args.end is None or frame_index <= args.end:
@@ -148,6 +156,13 @@ def extract(args) -> dict:
             "（最大の骨格を投手とみなした）。別人を拾っていないか確認すること。"
         )
 
+    if seek_landing != args.start:
+        notes.append(
+            f"シークが要求フレーム {args.start} ではなく {seek_landing} へ着地した"
+            f"（差 {seek_landing - args.start} フレーム）。キーフレーム境界の可能性。"
+            "フレーム番号はこの着地点を基準にしている。"
+        )
+
     return {
         "schema_version": SCHEMA_VERSION,
         "meta": {
@@ -156,6 +171,10 @@ def extract(args) -> dict:
             "video_path": str(video),
             "adapter": "ultralytics(extract-pose.py)",
             "notes": notes,
+            # 封筒を組み立てるために持ち帰る。要求値と着地点の両方を残す。
+            "requested_start_frame": args.start,
+            "seek_landing_frame": seek_landing,
+            "end_frame": args.end if args.end is not None else frames[-1]["frame_index"],
         },
         "frames": frames,
     }
@@ -170,6 +189,63 @@ def build_detector(args):
     model = YOLO(args.detection_model)
     return lambda image: model.predict(
         image, conf=args.conf, imgsz=args.imgsz, verbose=False
+    )
+
+
+def wrap_in_envelope(payload: dict, args) -> dict:
+    """1 球フォルダ用の封筒を被せる。
+
+    **入力動画（クリップ）が唯一の基準。** セッションも metadata.json も見ない
+    ——アプリ外で撮った動画には親セッションが無いし、自己申告と実体はずれる
+    （実データで durationMs が 5ms、fps が 8 桁目で食い違っていた）。
+
+    姿勢推定は GPU のある別の PC で走るので、出力した JSON は**ファイルとして
+    別のマシンへ渡り、人の手で 1 球フォルダへ置かれる**。置き間違いを検出できる
+    よう、入力クリップの指紋を封筒へ入れる（投球ごとにクリップが違うので、
+    ここでは指紋が実際に区別できる）。
+
+    --envelope を付けない従来の使い方では呼ばれない。既存の出力は変わらない。
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from analysis_envelope import build_envelope
+    from video_probe import ProbeError, probe_video
+
+    video = Path(args.video)
+    try:
+        info = probe_video(video)
+    except ProbeError as error:
+        raise SystemExit(f"封筒を作れません: {error}")
+
+    meta = payload["meta"]
+
+    # **封筒と中身が別々の時間軸を使えないようにする。**
+    # 中身の timestamp_sec は cv2 の CAP_PROP_FPS 由来で、コンテナの公称値
+    # （240.0 など）が返ることがある。封筒の時間軸はファイルの stts 由来。
+    # 表示は目盛表で行うので中身の timestamp_sec は使わないが、
+    # 食い違ったままの値を「事実」として保存はしない。
+    if abs(float(meta["fps"]) - info["fps"]) > 1e-6:
+        raise SystemExit(
+            f"fps が食い違っています。cv2 が申告した値 {meta['fps']} に対し、"
+            f"動画の stts から求めた平均は {info['fps']} です。\n"
+            f"--fps {info['fps']} を指定し直してください"
+            "（--envelope を付けた場合は既定でそうなります）。"
+        )
+
+    return build_envelope(
+        analysis_id="pose-" + Path(args.pose_model).stem,
+        analysis_type="pose",
+        clip_path=video,
+        pitch_id=meta["pitch_id"],
+        # OpenCV 4.5 以降は既定でデコード時に回転を当てる。推測させず宣言する。
+        rotation_applied=True,
+        producer={
+            "name": "extract-pose.py",
+            "version": str(SCHEMA_VERSION),
+            "model": args.pose_model,
+            "detectionModel": args.detection_model,
+            "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        },
+        data=payload,
     )
 
 
@@ -195,9 +271,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-keypoint-score", type=float, default=MIN_KEYPOINT_SCORE)
     parser.add_argument("--shared-dir", default=default_shared, help="shared/pose.py の場所")
     parser.add_argument(
+        "--envelope", action="store_true",
+        help="1 球フォルダ用の封筒付き JSON を書き出す"
+             "（入力クリップの指紋・目盛表・座標系を添える）",
+    )
+    parser.add_argument(
         "--progress", type=int, default=50, help="何フレームごとに進捗を出すか（0で出さない）"
     )
     args = parser.parse_args(argv)
+
+    # 封筒を出すなら、fps は動画の stts から求めた値を既定にする。
+    # cv2 の CAP_PROP_FPS はコンテナの公称値（240.0 など）を返すことがあり、
+    # 実測（239.488...）とずれる。指定を省いたときだけ埋めるので、
+    # 明示した --fps は尊重する。
+    if args.envelope and args.fps is None and args.video:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from video_probe import ProbeError, probe_video
+
+        try:
+            args.fps = probe_video(args.video)["fps"]
+        except ProbeError as error:
+            raise SystemExit(f"入力動画から時間情報を読めません: {error}")
 
     if not args.video:
         raise SystemExit(
@@ -209,12 +303,17 @@ def main(argv: list[str] | None = None) -> int:
         args.output = str(Path(args.video).with_name(f"{Path(args.video).stem}_pose.json"))
 
     payload = extract(args)
+    if args.envelope:
+        payload = wrap_in_envelope(payload, args)
+
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-    print(f"{len(payload['frames'])} フレームを書き出しました: {output}")
-    for note in payload["meta"]["notes"]:
+    frames = payload["data"]["frames"] if "data" in payload else payload["frames"]
+    print(f"{len(frames)} フレームを書き出しました: {output}")
+    meta = payload["data"]["meta"] if "data" in payload else payload["meta"]
+    for note in meta["notes"]:
         print(f"  注意: {note}")
     return 0
 

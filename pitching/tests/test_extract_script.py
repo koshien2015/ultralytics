@@ -74,8 +74,14 @@ def test_script_avoids_heavy_dependencies():
     assert imported_modules() & heavy == set()
 
 
+# 台本の隣に置いてある、pip 導入を要さない自作モジュール。
+# 共通ビューア用の封筒を作るために使う。台本と一緒に配られるので、
+# 「入れておくものが増える」ことにはならない。
+SIBLING_MODULES = {"analysis_envelope", "video_fingerprint", "video_probe"}
+
+
 def test_script_only_needs_ultralytics_side_packages():
-    """標準ライブラリ以外は cv2 / ultralytics / shared の pose だけ。"""
+    """標準ライブラリ以外は cv2 / ultralytics / shared の pose と、隣に置いた自作モジュールだけ。"""
     import sys
 
     outside = {
@@ -83,7 +89,35 @@ def test_script_only_needs_ultralytics_side_packages():
         if name not in sys.stdlib_module_names and name != "__future__"
     }
 
-    assert outside <= {"cv2", "ultralytics", "pose"}
+    assert outside <= {"cv2", "ultralytics", "pose"} | SIBLING_MODULES
+
+
+def test_sibling_modules_are_standard_library_only():
+    """隣のモジュール自身が重い依存を引かないこと。
+
+    許可リストを広げるだけだと、そこから先で何を import していても通ってしまい、
+    「推論コンテナで単体で動く」という性質が静かに失われる。中身まで見る。
+    """
+    import ast
+    import sys
+
+    for name in sorted(SIBLING_MODULES):
+        path = SCRIPT_PATH.parent / f"{name}.py"
+        assert path.is_file(), f"{path} が無い（台本と一緒に配られる前提）"
+
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                names.add(node.module.split(".")[0])
+
+        outside = {
+            item for item in names
+            if item not in sys.stdlib_module_names and item != "__future__"
+        }
+        assert outside <= SIBLING_MODULES, f"{name}.py が標準ライブラリ外を import している: {outside}"
 
 
 def test_pitcher_selection_is_delegated_to_shared_pose():
