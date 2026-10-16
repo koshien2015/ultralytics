@@ -25,6 +25,8 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 DEFAULT_MIN_CAP_PX = 4
 DEFAULT_MAX_CAP_PX = 150
 DUPLICATE_IOU_THRESHOLD = 0.9
+# labelImg / X-AnyLabeling がラベルと同じ場所に置くクラス名一覧（ラベルではない）
+CLASSES_FILE_NAME = "classes.txt"
 
 
 def parse_label_line(line):
@@ -132,7 +134,8 @@ def collect_split(split_dir):
         if p.suffix.lower() in IMAGE_EXTENSIONS
     } if images_dir.is_dir() else {}
     labels = {
-        p.stem: p for p in labels_dir.iterdir() if p.suffix == ".txt"
+        p.stem: p for p in labels_dir.iterdir()
+        if p.suffix == ".txt" and p.name != CLASSES_FILE_NAME
     } if labels_dir.is_dir() else {}
 
     return images, labels
