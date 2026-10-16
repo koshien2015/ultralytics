@@ -24,6 +24,8 @@ make_dataset.py が書き出したフレーム画像に学習済みモデルを�
 キャップの写ったフレームを選べなくなる。キャップを見落としたフレームに人物だけの
 ラベルが残ると「ここにキャップは無い」と学習してしまうので、付け忘れ候補は必ず確認する。
 
+環境構築・確認リストの読み方・学習への回し方は PRELABEL.md を参照。
+
 使用例:
     python prelabel.py datasets/frames --weights yolo26m-1280px-120epoch.pt --imgsz 1280
     python prelabel.py datasets/frames --weights best.pt --out datasets/frames_draft
