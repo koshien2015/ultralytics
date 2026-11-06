@@ -83,7 +83,7 @@ def cmd_video(args) -> int:
     meta, _records, _config = _load_run(args)
     estimates = load_estimates(_run_dir(args) / "estimates.json")
     panels = {"YOLO": estimates["yolo"], "YOLO+linear": estimates["linear"],
-              "YOLO+Kalman": estimates["kalman"]}
+              "YOLO+RANSAC": estimates["ransac"], "YOLO+Kalman": estimates["kalman"]}
     out = _run_dir(args) / f"compare_{args.start}_{args.end}.mp4"
     render_comparison(Path(meta["video_path"]), out, panels, args.start, args.end, args.panel_width)
     print(f"保存しました: {out}")
@@ -113,7 +113,7 @@ def _parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--split", choices=SPLITS, required=True)
     evaluate.set_defaults(handler=cmd_evaluate)
 
-    video = commands.add_parser("video", help="3手法の比較動画を作る")
+    video = commands.add_parser("video", help="4手法の比較動画を作る")
     video.add_argument("video_id")
     video.add_argument("--start", type=int, required=True)
     video.add_argument("--end", type=int, required=True)

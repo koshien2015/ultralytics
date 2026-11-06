@@ -45,7 +45,7 @@ python -m temporal_experiment evaluate bXETW0GxBbkZoyHO \
 python -m temporal_experiment evaluate bXETW0GxBbkZoyHO \
   --truth-yolo <人が確認済みのラベル> --clips clips.yaml --split eval
 
-# 5. 比較動画を作る
+# 5. YOLO、linear、RANSAC、Kalman の比較動画を作る
 python -m temporal_experiment video bXETW0GxBbkZoyHO --start 550 --end 580
 ```
 

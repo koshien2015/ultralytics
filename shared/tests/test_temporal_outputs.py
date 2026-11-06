@@ -145,6 +145,21 @@ def test_comparison_video_has_one_panel_per_method(tmp_path):
     assert int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) == 6
 
 
+def test_cli_video_shows_ransac_next_to_linear(tmp_path):
+    run_dir = tmp_path / "vid"
+    run_dir.mkdir()
+    video = tmp_path / "in.mp4"
+    write_video(video)
+    meta = {"video_id": "vid", "fps": 30.0, "width": 1280, "height": 720, "video_path": str(video)}
+    save_detections(run_dir / "detections.json", meta, synthetic_records())
+
+    assert main(["--runs", str(tmp_path), "track", "vid"]) == 0
+    assert main(["--runs", str(tmp_path), "video", "vid", "--start", "0", "--end", "6",
+                 "--panel-width", "160"]) == 0
+    capture = cv2.VideoCapture(str(run_dir / "compare_0_6.mp4"))
+    assert int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) == 640
+
+
 def test_cli_track_and_evaluate_work_without_reinference(tmp_path):
     run_dir = tmp_path / "vid"
     run_dir.mkdir()
