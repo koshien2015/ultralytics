@@ -6,6 +6,7 @@ from ultralytics import YOLO
 import tennis
 import prefilter
 from pitching_analysis import PitchingAnalyzer
+from temporal_experiment.track_fill import export_linear_fill, frame_record
 
 
 def draw_neon_polyline(
@@ -119,6 +120,10 @@ DRAW_TRAJECTORY = True  # 軌跡を描画するか
 MAX_TRAJECTORY_LENGTH = 60  # 軌跡の最大長さ（フレーム数）
 TRAJECTORY_FADE_FRAMES = 60  # 検出されなくなってから何フレームで消えるか
 
+# 線形補完設定（True で <動画名>_filled.json と <動画名>_filled.mp4 を追加で出力する）
+# 既存の出力は変わらない。補完の線がおかしいときは False に戻す
+ENABLE_LINEAR_FILL = False
+
 # ネオン効果設定
 TRAJECTORY_COLOR = (0, 255, 255)  # 軌跡の色（BGR: シアン）
 NEON_CORE_COLOR = (255, 255, 255)  # 中心線の色（BGR: 白）
@@ -136,6 +141,9 @@ STRIKE_ZONE_CENTER_X = None  # ストライクゾーンの中央X座標（ピク
 # 各物体の軌跡を保存する辞書 {物体ID: {'points': [(x, y), ...], 'last_seen': frame_number}}
 trajectories = {}
 next_object_id = 0
+
+# 線形補完に渡す全フレームの検出結果
+fill_records = []
 
 # ピッチング解析の初期化
 analyzer = None
@@ -205,6 +213,10 @@ while True:
     else:
         # 空の結果を渡す。軌跡はフェードし、解析側も検出なしとして扱う
         results = []
+
+    if ENABLE_LINEAR_FILL:
+        timestamp = cap_original.get(cv2.CAP_PROP_POS_MSEC) / 1000
+        fill_records.append(frame_record(frame_count, timestamp, results, target_classes))
 
     # ピッチング解析
     if analyzer:
@@ -348,6 +360,13 @@ if processing_speed < 1.0:
     print(f"  (処理は実時間の{1/processing_speed:.2f}倍かかっています)")
 else:
     print(f"  (実時間の{processing_speed:.2f}倍速で処理できています)")
+
+# 線形補完の出力（前後の検出を使うので、全フレームの処理後に行う）
+if ENABLE_LINEAR_FILL:
+    fill_json, fill_video = export_linear_fill(
+        fill_records, original_video, video_dir, base_name, width
+    )
+    print(f"Linear fill saved to: {fill_json}, {fill_video}")
 
 # ピッチング解析のJSON出力
 if analyzer:

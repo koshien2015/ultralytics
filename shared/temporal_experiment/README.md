@@ -1,7 +1,7 @@
 # 時系列追跡・補完の検証
 
 YOLO の検出結果に時系列の追跡と補完を組み合わせて、再学習なしで検出抜けをどこまで補えるかを検証する実験モジュールです。
-既存の `track.py` や学習処理は変更していません。
+学習処理は変更していません。`track.py` からは、線形補完を既定で OFF のフラグとして使えます（「track.py の線形補完」を参照）。
 
 結果と考察は `../docs/temporal-tracking-experiment.md` にまとめます。
 
@@ -55,6 +55,17 @@ python -m temporal_experiment video bXETW0GxBbkZoyHO --start 550 --end 580
 python -m pytest tests/test_temporal_tracking.py tests/test_temporal_metrics.py \
   tests/test_temporal_io.py tests/test_temporal_outputs.py -q
 ```
+
+## track.py の線形補完
+
+`track.py` の `ENABLE_LINEAR_FILL` を `True` にすると、全フレームの処理後に `linear` と同じ処理を実行し、次の2つを追加で出力します。既定は `False` です。
+
+- `<動画名>_filled.json`: フレームごとの状態と位置（`detected` / `interpolated` / `missing`）
+- `<動画名>_filled.mp4`: 元動画に軌跡を描いた動画（検出は緑、補間はオレンジ）
+
+`_detected.mp4`、`_trajectory.json`、`_analysis.json` は変わりません。補完の線がおかしいときは `False` に戻します。
+
+前段フィルタが推論しなかったフレームは欠損として扱うので、同じ軌道の検出に挟まれ、`max_missed_frames` 以内なら補間します。
 
 ## 正解データ
 
