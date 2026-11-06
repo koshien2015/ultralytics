@@ -366,9 +366,10 @@ def test_missing_cap_skips_frames_already_labelled_with_cap(tmp_path):
 def test_missing_cap_outside_image_is_not_listed(tmp_path):
     images = tmp_path / "frames"
     make_images(images, "pitch", range(95, 115))
-    # 右へ速く抜けていく軌跡。前後の予測位置は画像の外になる
+    # 右へ速く抜けていく軌跡。107 以降の予測位置は画像の外になる。
+    # x=1920 ちょうどだと、当てはめの丸め誤差で画像の内側に入る
     per_frame = {
-        ("pitch", f): [Detection(CAP, 1500.0 + 60.0 * (f - 100), 500.0, 12, 12, 0.8)]
+        ("pitch", f): [Detection(CAP, 1510.0 + 60.0 * (f - 100), 500.0, 12, 12, 0.8)]
         for f in range(100, 107)
     }
 
@@ -377,7 +378,7 @@ def test_missing_cap_outside_image_is_not_listed(tmp_path):
     )
 
     missing = [int(r["frame"]) for r in read_report(images) if r["source"] == "missing_cap"]
-    assert missing == [97, 98, 99]  # 107 以降は x > 1920
+    assert missing == [97, 98, 99]  # 107 は x = 1930 で画像の外
 
 
 def test_box_entirely_outside_image_is_not_written(tmp_path):
