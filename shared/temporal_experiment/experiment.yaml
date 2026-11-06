@@ -1,0 +1,27 @@
+# 実験条件。距離は reference_width の動画を基準に書き、動画の幅に合わせて換算する。
+# 値を変えるときは調整用の区間（split: tuning）だけを見て決める。
+reference_width: 1280
+inference:
+  weights: yolo26m-1280px-120epoch.pt
+  imgsz: 1280
+  conf: 0.15
+  preprocess: enhanced
+  cap_class: cap
+tracker:
+  max_speed_px_s: 2500.0
+  max_missed_frames: 5
+  min_hits: 2
+  tentative_max_misses: 2
+  min_track_extent_px: 5.0
+  motion_window: 3
+  max_prediction_error_px: 60.0
+kalman:
+  accel_noise_px_s2: 3000.0
+  obs_noise_px: 3.0
+  gate_chi2: 9.21
+  init_speed_px_s: 1500.0
+fit:
+  inlier_px: 12.0
+evaluation:
+  match_radius_px: 15.0
+  error_cap_px: 100.0
