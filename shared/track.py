@@ -364,8 +364,7 @@ else:
 # 線形補完の出力（前後の検出を使うので、全フレームの処理後に行う）
 if ENABLE_LINEAR_FILL:
     fill_json, fill_video = export_linear_fill(
-        fill_records, original_video, video_dir, base_name, width,
-        draw_trail=DRAW_TRAJECTORY,
+        fill_records, output_path, video_dir, base_name, width
     )
     print(f"Linear fill saved to: {fill_json}, {fill_video}")
 

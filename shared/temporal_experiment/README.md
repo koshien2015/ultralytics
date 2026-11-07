@@ -61,7 +61,7 @@ python -m pytest tests/test_temporal_tracking.py tests/test_temporal_metrics.py 
 `track.py` の `ENABLE_LINEAR_FILL` を `True` にすると、全フレームの処理後に `linear` と同じ処理を実行し、次の2つを追加で出力します。既定は `False` です。
 
 - `<動画名>_filled.json`: フレームごとの状態と位置（`detected` / `interpolated` / `missing`）
-- `<動画名>_filled.mp4`: 元動画に推定位置と bbox を描いた動画（検出は緑、補間はオレンジ）。`DRAW_TRAJECTORY` が `True` のときは軌跡も描く
+- `<動画名>_filled.mp4`: `_detected.mp4` の補間したフレームに、オレンジの bbox を足した動画
 
 `_detected.mp4`、`_trajectory.json`、`_analysis.json` は変わりません。補完の線がおかしいときは `False` に戻します。
 

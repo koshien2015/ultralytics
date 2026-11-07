@@ -82,40 +82,48 @@ def test_tracker_limits_scale_with_video_width():
     assert sum(e.status == DETECTED for e in wide.estimates) == 20
 
 
-def test_export_writes_estimates_and_video(tmp_path):
-    video = tmp_path / "in.mp4"
-    write_video(video)
+def export_blank_video(tmp_path):
+    video = tmp_path / "in_detected.mp4"
+    write_video(video, n=20, size=(320, 192))
+    return export_linear_fill(moving_records(drop=(10, 11)), video, tmp_path, "in", 320)
 
-    json_path, video_path = export_linear_fill(
-        moving_records(drop=(10, 11)), video, tmp_path, "in", 160
-    )
+
+def read_gray(video_path, frame):
+    capture = cv2.VideoCapture(str(video_path))
+    capture.set(cv2.CAP_PROP_POS_FRAMES, frame)
+    _, image = capture.read()
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(int)
+
+
+def test_export_writes_estimates_and_keeps_the_video_size(tmp_path):
+    json_path, video_path = export_blank_video(tmp_path)
 
     assert json_path == tmp_path / "in_filled.json"
     assert sum(e.status == INTERPOLATED for e in load_estimates(json_path)["linear"]) == 2
     capture = cv2.VideoCapture(str(video_path))
     assert int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) == 20
-    assert int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) == 160
+    assert int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) == 320
 
 
-def last_frame_brightness_on_trail(tmp_path, **options):
-    video = tmp_path / "in.mp4"
-    write_video(video, n=10)
-    _, video_path = export_linear_fill(moving_records(n=10), video, tmp_path, "in", 160, **options)
-    capture = cv2.VideoCapture(str(video_path))
-    capture.set(cv2.CAP_PROP_POS_FRAMES, 9)
-    _, frame = capture.read()
-    return int(frame[38:43, 38:43].max())  # フレーム9の点から離れた、軌跡の上の画素
+def test_interpolated_frame_gets_only_a_box_outline(tmp_path):
+    _, video_path = export_blank_video(tmp_path)
+
+    gray = read_gray(video_path, 10)  # 補間の位置は x=100, y=40、bbox は 95〜105 と 35〜45
+
+    assert gray[33:48, 93:108].max() > 40  # bbox の線がある
+    assert gray[38:43, 98:103].max() < 30  # 円で塗らない
+    outside = gray.copy()
+    outside[30:50, 90:110] = 0
+    assert outside.max() < 30  # 文字もフレーム番号も足さない
 
 
-def test_export_draws_the_trail_by_default(tmp_path):
-    assert last_frame_brightness_on_trail(tmp_path) > 80
+def test_detected_frame_is_left_as_it_was(tmp_path):
+    _, video_path = export_blank_video(tmp_path)
+
+    assert read_gray(video_path, 9).max() < 30
 
 
-def test_export_leaves_the_trail_out_when_drawing_is_off(tmp_path):
-    assert last_frame_brightness_on_trail(tmp_path, draw_trail=False) < 30
-
-
-def test_track_passes_draw_trajectory_to_the_export():
+def test_track_extends_the_detected_video():
     tree = ast.parse((SHARED / "track.py").read_text(encoding="utf-8"))
     calls = [
         node
@@ -123,9 +131,7 @@ def test_track_passes_draw_trajectory_to_the_export():
         if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "export_linear_fill"
     ]
 
-    assert [k.value.id for c in calls for k in c.keywords if k.arg == "draw_trail"] == [
-        "DRAW_TRAJECTORY"
-    ]
+    assert [c.args[1].id for c in calls] == ["output_path"]
 
 
 def test_track_keeps_linear_fill_off_by_default():

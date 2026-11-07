@@ -2,6 +2,7 @@
 
 前後の検出を使うので、全フレームの処理が終わった後に実行する。track.py の既存の出力は変えず、
 結果を <動画名>_filled.json と <動画名>_filled.mp4 に別に書き出す。
+_filled.mp4 は _detected.mp4 の補間したフレームに bbox を足した動画。
 """
 
 import time
@@ -11,7 +12,7 @@ from .config import load_config
 from .interpolate import linear_fill
 from .methods import run_nearest
 from .pipeline import MethodRun
-from .render import render_comparison
+from .render import render_filled
 from .report import save_estimates
 from .schema import Candidate, FrameRecord
 
@@ -42,13 +43,11 @@ def linear_track(records, width: int, config_path: Path = DEFAULT_CONFIG) -> Met
     return MethodRun(estimates, nearest.events, (time.perf_counter() - begin) * 1000)
 
 
-def export_linear_fill(records, video, out_dir, base_name: str, width: int,
-                       draw_trail: bool = True) -> tuple:
+def export_linear_fill(records, detected_video, out_dir, base_name: str, width: int) -> tuple:
     """補完の結果を JSON と動画に書き出し、(JSON のパス, 動画のパス) を返す"""
     run = linear_track(records, width)
     json_path = Path(out_dir) / f"{base_name}_filled.json"
     video_path = Path(out_dir) / f"{base_name}_filled.mp4"
     save_estimates(json_path, {"linear": run})
-    render_comparison(Path(video), video_path, {"linear": run.estimates}, 0, len(records), width,
-                      draw_trail)
+    render_filled(Path(detected_video), video_path, run.estimates)
     return json_path, video_path
