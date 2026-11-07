@@ -124,3 +124,32 @@ def render_comparison(video: Path, out: Path, estimates: dict, start: int, end: 
         raise RuntimeError(f"指定の範囲にフレームがありません: {start}〜{end}")
     writer.release()
     return Path(out)
+
+
+def _draw_interpolated_box(frame, box) -> np.ndarray:
+    image = frame.copy()
+    x1, y1, x2, y2 = (int(round(v)) for v in box)
+    cv2.rectangle(image, (x1, y1), (x2, y2), STYLES[INTERPOLATED].color, 1)
+    return image
+
+
+def render_filled(video: Path, out: Path, estimates) -> Path:
+    """video の補間したフレームにだけ bbox を足す。ほかのフレームはそのまま書き出す"""
+    capture = cv2.VideoCapture(str(video))
+    if not capture.isOpened():
+        raise RuntimeError(f"動画を開けません: {video}")
+    size = (int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"),
+                             capture.get(cv2.CAP_PROP_FPS), size)
+    boxes = {e.frame: e.box for e in estimates if e.status == INTERPOLATED and e.box is not None}
+    frame_number = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        box = boxes.get(frame_number)
+        writer.write(frame if box is None else _draw_interpolated_box(frame, box))
+        frame_number += 1
+    capture.release()
+    writer.release()
+    return Path(out)
