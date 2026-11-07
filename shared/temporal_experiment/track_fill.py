@@ -42,11 +42,13 @@ def linear_track(records, width: int, config_path: Path = DEFAULT_CONFIG) -> Met
     return MethodRun(estimates, nearest.events, (time.perf_counter() - begin) * 1000)
 
 
-def export_linear_fill(records, video, out_dir, base_name: str, width: int) -> tuple:
+def export_linear_fill(records, video, out_dir, base_name: str, width: int,
+                       draw_trail: bool = True) -> tuple:
     """補完の結果を JSON と動画に書き出し、(JSON のパス, 動画のパス) を返す"""
     run = linear_track(records, width)
     json_path = Path(out_dir) / f"{base_name}_filled.json"
     video_path = Path(out_dir) / f"{base_name}_filled.mp4"
     save_estimates(json_path, {"linear": run})
-    render_comparison(Path(video), video_path, {"linear": run.estimates}, 0, len(records), width)
+    render_comparison(Path(video), video_path, {"linear": run.estimates}, 0, len(records), width,
+                      draw_trail)
     return json_path, video_path

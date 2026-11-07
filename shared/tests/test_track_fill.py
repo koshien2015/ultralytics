@@ -97,6 +97,37 @@ def test_export_writes_estimates_and_video(tmp_path):
     assert int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) == 160
 
 
+def last_frame_brightness_on_trail(tmp_path, **options):
+    video = tmp_path / "in.mp4"
+    write_video(video, n=10)
+    _, video_path = export_linear_fill(moving_records(n=10), video, tmp_path, "in", 160, **options)
+    capture = cv2.VideoCapture(str(video_path))
+    capture.set(cv2.CAP_PROP_POS_FRAMES, 9)
+    _, frame = capture.read()
+    return int(frame[38:43, 38:43].max())  # フレーム9の点から離れた、軌跡の上の画素
+
+
+def test_export_draws_the_trail_by_default(tmp_path):
+    assert last_frame_brightness_on_trail(tmp_path) > 80
+
+
+def test_export_leaves_the_trail_out_when_drawing_is_off(tmp_path):
+    assert last_frame_brightness_on_trail(tmp_path, draw_trail=False) < 30
+
+
+def test_track_passes_draw_trajectory_to_the_export():
+    tree = ast.parse((SHARED / "track.py").read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "export_linear_fill"
+    ]
+
+    assert [k.value.id for c in calls for k in c.keywords if k.arg == "draw_trail"] == [
+        "DRAW_TRAJECTORY"
+    ]
+
+
 def test_track_keeps_linear_fill_off_by_default():
     tree = ast.parse((SHARED / "track.py").read_text(encoding="utf-8"))
     flags = [

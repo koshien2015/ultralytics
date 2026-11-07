@@ -77,10 +77,11 @@ def _draw_mark(image, estimate) -> None:
                 style.color, weight, cv2.LINE_AA)
 
 
-def draw_panel(frame, title, trail, frame_number) -> np.ndarray:
+def draw_panel(frame, title, trail, frame_number, draw_trail=True) -> np.ndarray:
     """trail は現在フレームまでの推定列。元のフレームは書き換えない"""
     image = frame.copy()
-    _draw_trail(image, trail)
+    if draw_trail:
+        _draw_trail(image, trail)
     current = trail[-1] if trail else None
     if current is not None and current.frame == frame_number and current.has_position:
         _draw_mark(image, current)
@@ -96,7 +97,7 @@ def _resize(image, width) -> np.ndarray:
 
 
 def render_comparison(video: Path, out: Path, estimates: dict, start: int, end: int,
-                      panel_width: int) -> Path:
+                      panel_width: int, draw_trail: bool = True) -> Path:
     """estimates は {表示名: Estimate の並び}。[start, end) を横並びの動画にする"""
     capture = cv2.VideoCapture(str(video))
     if not capture.isOpened():
@@ -113,7 +114,8 @@ def render_comparison(video: Path, out: Path, estimates: dict, start: int, end: 
         for name, lookup in by_frame.items():
             first = max(start, frame_number - TRAIL_FRAMES)
             trail = tuple(lookup[f] for f in range(first, frame_number + 1) if f in lookup)
-            panels.append(_resize(draw_panel(frame, name, trail, frame_number), panel_width))
+            panel = draw_panel(frame, name, trail, frame_number, draw_trail)
+            panels.append(_resize(panel, panel_width))
         row = cv2.hconcat(panels)
         if writer is None:
             size = (row.shape[1], row.shape[0])
